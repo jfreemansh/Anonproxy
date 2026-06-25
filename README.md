@@ -200,7 +200,7 @@ type, with counts and CSV export. It binds to localhost and honours
 `ANONPROXY_API_TOKEN` if set; disable it with `ANONPROXY_AUDIT=false`. It exposes
 the reverse lookup, so treat it as an operator-only debug view.
 
-## Engagement workflow (Nethemba)
+## Engagement workflow
 
 1. **One engagement id per client** (`--engagement acme-2026`). This isolates the
    vault so surrogates never cross between clients.
