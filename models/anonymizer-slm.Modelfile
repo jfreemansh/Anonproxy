@@ -1,0 +1,22 @@
+# Import Eternis's Anonymizer SLM into Ollama.
+#
+# 1. Download a GGUF from the collection:
+#      https://huggingface.co/collections/eternisai/anonymizer-model-series
+#    (the 1.7B or 4B variant is the sweet spot; quantize to Q4_K_M for laptops).
+# 2. Put the .gguf next to this file (or fix the FROM path).
+# 3. Build it:
+#      ollama create anonymizer-slm -f models/anonymizer-slm.Modelfile
+# 4. Use it:
+#      ANONPROXY_DETECTORS=regex,anonymizer-slm python -m anonproxy serve
+#
+# Anonproxy uses only the model's *detections* and applies its own deterministic
+# surrogates, so the exact replacement style of the model doesn't affect
+# consistency or reversibility.
+
+FROM ./anonymizer-slm-4b-q4_k_m.gguf
+
+PARAMETER temperature 0
+PARAMETER num_ctx 4096
+
+# The model was trained to return a replace_entities tool call; keep it terse.
+SYSTEM """You identify personal/sensitive entities in the user's text and return a replace_entities tool call listing each original span to replace. Return only the tool call."""

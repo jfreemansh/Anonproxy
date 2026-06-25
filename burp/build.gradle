@@ -1,0 +1,26 @@
+plugins {
+    id 'java'
+}
+
+group = 'com.nethemba'
+version = '0.1.0'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Montoya API — Burp provides the implementation at runtime.
+    compileOnly 'net.portswigger.burp.extensions:montoya-api:2024.12'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+// Produces build/libs/anonproxy-burp-0.1.0.jar — load it via
+// Burp > Extensions > Add > Java.
+jar {
+    archiveBaseName = 'anonproxy-burp'
+}
