@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "anonproxy"
+version = "0.1.0"
+description = "Reversible anonymization proxy for sending pentest data to LLMs"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+# Optional contextual-detection backends (enable via ANONPROXY_DETECTORS).
+gliner = ["gliner>=0.2.13"]
+gliner2 = ["gliner2>=0.1"]                       # SOTA: fastino/gliner2-privacy-filter-PII-multi
+piiranha = ["transformers>=4.40", "torch>=2.2"]
+openai-pii = ["transformers>=4.40", "torch>=2.2"]
+# anonymizer-slm needs no extra Python deps — it runs via Ollama.
+all = ["gliner>=0.2.13", "gliner2>=0.1", "transformers>=4.40", "torch>=2.2"]
+
+[project.scripts]
+anonproxy = "anonproxy.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["anonproxy*"]

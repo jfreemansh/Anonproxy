@@ -1,0 +1,35 @@
+# Local, all-in-one stack: anonymizing proxy + a local Ollama for detection.
+# Everything binds to 127.0.0.1 only — nothing is exposed off the machine.
+#
+#   ENGAGEMENT_ID=acme-2026 docker compose up -d
+#   docker compose exec ollama ollama pull qwen3:4b   # one-time model pull
+#   export ANTHROPIC_BASE_URL=http://127.0.0.1:8080
+#
+services:
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+
+  proxy:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - ollama
+    environment:
+      ENGAGEMENT_ID: "${ENGAGEMENT_ID:-default}"
+      OLLAMA_HOST: "http://ollama:11434"
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen3:4b}"
+      LLM_ENABLED: "${LLM_ENABLED:-true}"
+      ANONPROXY_API_TOKEN: "${ANONPROXY_API_TOKEN:-}"
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - vaults:/data/vaults
+
+volumes:
+  ollama:
+  vaults:
