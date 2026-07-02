@@ -83,8 +83,10 @@ def main(argv=None) -> int:
         from . import verify
         report = verify.run(settings, use_llm=not args.no_llm)
         verify.print_report(report, show_mappings=args.show_mappings)
+        tcp = report["tool_call_probe"]
         hard_fail = (report["total_leaks"] or report["roundtrip_failures"]
-                     or report["adversarial"]["leaked"])
+                     or report["adversarial"]["leaked"]
+                     or tcp["anthropic_tool_use_leak"] or tcp["openai_tool_call_leak"])
         return 1 if hard_fail else 0
 
     if args.cmd == "audit":

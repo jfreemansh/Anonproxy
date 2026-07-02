@@ -16,10 +16,12 @@ Exit code is non-zero if any real leak is found.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 
 from .config import Settings
 from .engine import Engine
+from .proxy import transform
 
 
 @dataclass
@@ -128,11 +130,13 @@ def run(settings: Settings | None = None, use_llm: bool = True) -> dict:
                         "anonymized": anon})
 
     probe = _adversarial_probe(engine, contextual)
+    tool_probe = _tool_call_probe(engine)
 
     return {"contextual_active": contextual, "detectors": det_status,
             "results": results, "total_leaks": total_leaks,
             "needs_llm": total_needs_ctx, "roundtrip_failures": rt_failures,
-            "adversarial": probe, "mappings": engine.export()}
+            "adversarial": probe, "tool_call_probe": tool_probe,
+            "mappings": engine.export()}
 
 
 def _adversarial_probe(engine: Engine, contextual: bool) -> dict:
@@ -147,6 +151,31 @@ def _adversarial_probe(engine: Engine, contextual: bool) -> dict:
                        if layer == "regex"]
     leaked = sorted({s for s in must_never_leak if s in outbound})
     return {"leaked": leaked, "checked": len(set(must_never_leak))}
+
+
+def _tool_call_probe(engine: Engine) -> dict:
+    """Tool-call payloads must not leak real values either — a real engagement
+    regression: a prior assistant turn's tool call (host/creds used in a
+    command) gets echoed back in conversation history on the next request, and
+    that content bypassed anonymization entirely until this check existed.
+    """
+    real_host = "10.10.10.5"
+
+    anthropic_body = {"messages": [{"role": "assistant", "content": [
+        {"type": "tool_use", "id": "t1", "name": "run_ssh",
+         "input": {"host": real_host, "user": "admin"}},
+    ]}]}
+    anthropic_out = transform.anonymize_anthropic_request(engine, anthropic_body)
+    anthropic_leak = real_host in json.dumps(anthropic_out)
+
+    openai_body = {"messages": [{"role": "assistant", "content": None, "tool_calls": [
+        {"id": "c1", "type": "function", "function": {
+            "name": "run_ssh", "arguments": json.dumps({"host": real_host, "user": "admin"})}},
+    ]}]}
+    openai_out = transform.anonymize_openai_request(engine, openai_body)
+    openai_leak = real_host in json.dumps(openai_out)
+
+    return {"anthropic_tool_use_leak": anthropic_leak, "openai_tool_call_leak": openai_leak}
 
 
 def print_report(report: dict, show_mappings: bool = False) -> None:
@@ -185,6 +214,14 @@ def print_report(report: dict, show_mappings: bool = False) -> None:
     for s in adv["leaked"]:
         print(f"          OUTBOUND LEAK: {s!r}")
 
+    tcp = report["tool_call_probe"]
+    tool_leak = tcp["anthropic_tool_use_leak"] or tcp["openai_tool_call_leak"]
+    print(f"  tool-call payload probe: {'LEAK ✗' if tool_leak else 'ok ✓'}")
+    if tcp["anthropic_tool_use_leak"]:
+        print("          Anthropic tool_use.input leaked a real value")
+    if tcp["openai_tool_call_leak"]:
+        print("          OpenAI tool_calls[].function.arguments leaked a real value")
+
     if show_mappings:
         print("-" * 60)
         print("  Anonymized fixture output (what the LLM would receive):")
@@ -200,7 +237,7 @@ def print_report(report: dict, show_mappings: bool = False) -> None:
     print(f"  leaks: {report['total_leaks']}   "
           f"round-trip failures: {report['roundtrip_failures']}   "
           f"needs-contextual (regex-only): {report['needs_llm']}")
-    hard_fail = report["total_leaks"] or report["roundtrip_failures"] or adv["leaked"]
+    hard_fail = report["total_leaks"] or report["roundtrip_failures"] or adv["leaked"] or tool_leak
     if not hard_fail:
         if report["needs_llm"] and not report["contextual_active"]:
             print("  RESULT: regex floor holds. Enable a contextual backend for "

@@ -126,6 +126,11 @@ class Settings:
     # --- Audit dashboard -----------------------------------------------------
     audit_enabled: bool = field(default_factory=lambda: _env_bool("ANONPROXY_AUDIT", True))
 
+    # Fail closed instead of forwarding raw bytes when a request body can't be
+    # parsed (so it can't be anonymized). Off by default so odd/legacy clients
+    # keep working; turn on if you want a hard guarantee over convenience.
+    strict_mode: bool = field(default_factory=lambda: _env_bool("ANONPROXY_STRICT", False))
+
     def __post_init__(self):
         # Normalise the Ollama endpoint. People commonly export
         # OLLAMA_HOST=0.0.0.0:11434 to make the *server* listen on all

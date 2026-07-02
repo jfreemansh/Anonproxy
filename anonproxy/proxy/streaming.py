@@ -34,8 +34,16 @@ def _data_event(event: str, payload: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
 
 
+# Anthropic content_block_delta.delta.type -> the field that carries the text
+# to restore. text_delta covers plain text blocks; input_json_delta covers a
+# streamed tool_use call's arguments (partial_json) and must be restored too,
+# or a client executing the tool call acts on the surrogate instead of the
+# real value.
+_DELTA_FIELD = {"text_delta": "text", "input_json_delta": "partial_json"}
+
+
 async def anthropic_stream(engine, aiter_bytes) -> AsyncIterator[str]:
-    restorers: dict[int, object] = {}
+    restorers: dict[int, tuple[object, str]] = {}  # idx -> (StreamRestorer, delta type)
     async for line in _lines(aiter_bytes):
         if not line.startswith("data:"):
             # event: / blank / comment lines pass through verbatim
@@ -49,22 +57,27 @@ async def anthropic_stream(engine, aiter_bytes) -> AsyncIterator[str]:
             continue
 
         etype = obj.get("type")
-        if etype == "content_block_delta" and obj.get("delta", {}).get("type") == "text_delta":
+        dtype = (obj.get("delta") or {}).get("type")
+        field = _DELTA_FIELD.get(dtype)
+        if etype == "content_block_delta" and field:
             idx = obj.get("index", 0)
-            sr = restorers.get(idx)
-            if sr is None:
-                sr = restorers[idx] = engine.stream_restorer()
-            obj["delta"]["text"] = sr.push(obj["delta"].get("text", ""))
+            entry = restorers.get(idx)
+            if entry is None:
+                entry = restorers[idx] = (engine.stream_restorer(), dtype)
+            sr, _ = entry
+            obj["delta"][field] = sr.push(obj["delta"].get(field, ""))
             yield f"data: {json.dumps(obj)}\n\n"
         elif etype == "content_block_stop":
             idx = obj.get("index", 0)
-            sr = restorers.pop(idx, None)
-            if sr is not None:
+            entry = restorers.pop(idx, None)
+            if entry is not None:
+                sr, dtype = entry
                 tail = sr.flush()
                 if tail:
+                    field = _DELTA_FIELD[dtype]
                     yield _data_event("content_block_delta", {
                         "type": "content_block_delta", "index": idx,
-                        "delta": {"type": "text_delta", "text": tail},
+                        "delta": {"type": dtype, field: tail},
                     })
             yield f"data: {json.dumps(obj)}\n\n"
         else:
@@ -72,7 +85,8 @@ async def anthropic_stream(engine, aiter_bytes) -> AsyncIterator[str]:
 
 
 async def openai_stream(engine, aiter_bytes) -> AsyncIterator[str]:
-    restorers: dict[int, object] = {}
+    restorers: dict[int, object] = {}                     # choice index -> content restorer
+    tool_restorers: dict[tuple[int, int], object] = {}    # (choice index, call index) -> restorer
     async for line in _lines(aiter_bytes):
         if not line.startswith("data:"):
             yield line + "\n"
@@ -84,6 +98,13 @@ async def openai_stream(engine, aiter_bytes) -> AsyncIterator[str]:
                 if tail:
                     chunk = {"choices": [{"index": idx, "delta": {"content": tail}}]}
                     yield f"data: {json.dumps(chunk)}\n\n"
+            for (cidx, tidx), sr in tool_restorers.items():
+                tail = sr.flush()
+                if tail:
+                    chunk = {"choices": [{"index": cidx, "delta": {"tool_calls": [
+                        {"index": tidx, "function": {"arguments": tail}}
+                    ]}}]}
+                    yield f"data: {json.dumps(chunk)}\n\n"
             yield "data: [DONE]\n\n"
             continue
         try:
@@ -93,11 +114,24 @@ async def openai_stream(engine, aiter_bytes) -> AsyncIterator[str]:
             continue
         for choice in obj.get("choices", []):
             delta = choice.get("delta") or {}
+            cidx = choice.get("index", 0)
             content = delta.get("content")
             if isinstance(content, str) and content:
-                idx = choice.get("index", 0)
-                sr = restorers.get(idx)
+                sr = restorers.get(cidx)
                 if sr is None:
-                    sr = restorers[idx] = engine.stream_restorer()
+                    sr = restorers[cidx] = engine.stream_restorer()
                 delta["content"] = sr.push(content)
+            # streamed function-call arguments — same leak risk as content
+            for tc in delta.get("tool_calls") or []:
+                if not isinstance(tc, dict):
+                    continue
+                fn = tc.get("function") or {}
+                args = fn.get("arguments")
+                if isinstance(args, str) and args:
+                    tidx = tc.get("index", 0)
+                    key = (cidx, tidx)
+                    sr = tool_restorers.get(key)
+                    if sr is None:
+                        sr = tool_restorers[key] = engine.stream_restorer()
+                    fn["arguments"] = sr.push(args)
         yield f"data: {json.dumps(obj)}\n\n"

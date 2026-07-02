@@ -59,19 +59,22 @@ class PiiranhaDetector:
             return False
 
     def detect(self, text: str):
-        from . import Match
+        from . import Match, chunk_text
         self._load()
         out = []
-        for ent in self._pipe(text):
-            group = str(ent.get("entity_group", "")).upper()
-            etype = _LABEL_MAP.get(group, "OTHER")
-            start, end = ent.get("start"), ent.get("end")
-            value = text[start:end] if start is not None and end is not None \
-                else ent.get("word", "")
-            value = value.strip()
-            if value:
-                out.append(Match(text=value, entity_type=etype,
-                                 source="piiranha", confidence=float(ent.get("score", 0.5))))
+        seen = set()
+        for chunk in chunk_text(text):
+            for ent in self._pipe(chunk):
+                group = str(ent.get("entity_group", "")).upper()
+                etype = _LABEL_MAP.get(group, "OTHER")
+                start, end = ent.get("start"), ent.get("end")
+                value = chunk[start:end] if start is not None and end is not None \
+                    else ent.get("word", "")
+                value = value.strip()
+                if value and value not in seen:
+                    seen.add(value)
+                    out.append(Match(text=value, entity_type=etype,
+                                     source="piiranha", confidence=float(ent.get("score", 0.5))))
         return out
 
     def status(self) -> dict:

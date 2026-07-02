@@ -20,8 +20,11 @@ the single biggest source of the ~75% round-trip rate.
 * internal whitespace was re-wrapped (matters for multi-word PERSON/ORG values).
 
 It does this by matching against a *normalized projection* of the text while
-keeping an index map back to the original, so replacements land on real spans
-(and swallow the surrounding ``**`` / backticks). `StreamRestorer` adds a
+keeping an index map back to the original, so replacements land on real spans.
+Markdown *inside* a token is absorbed by the projection; markdown *around* a
+token is left untouched (a model's bold/backticks around a restored real value
+are harmless, and stripping them would eat genuine content when the same
+characters legitimately appear in the source). `StreamRestorer` adds a
 hold-back buffer so a surrogate split across SSE chunks is still restored whole.
 """
 from __future__ import annotations
@@ -29,8 +32,6 @@ from __future__ import annotations
 # characters models inject around/inside tokens that are NEVER part of a surrogate
 _NOISE = set("*`~")
 _ZEROWIDTH = set("​‌‍⁠﻿")
-# wrapper chars to swallow when they hug a matched span
-_WRAP = set("*`~_")
 # non-breaking / unicode hyphens models sometimes substitute for "-"
 _HYPHENS = {"‐": "-", "‑": "-", "‒": "-", "–": "-", "—": "-"}
 
@@ -107,11 +108,14 @@ class TolerantRestorer:
                     break
                 a, b = p, p + len(surf)
                 os, oe = idx[a], idx[b - 1] + 1
-                # swallow hugging wrapper characters so no dangling ** / ` remain
-                while os > 0 and text[os - 1] in _WRAP:
-                    os -= 1
-                while oe < len(text) and text[oe] in _WRAP:
-                    oe += 1
+                # Replace exactly the matched span. Interior noise (markdown
+                # *inside* a token) is already handled by the projection/index
+                # map. We deliberately do NOT expand outward to swallow hugging
+                # * ` ~ _ : those may be genuine original content (e.g. a config
+                # value written as *example.com* in a page), and eating them
+                # corrupts the round trip. Leaving a model's bold/backticks
+                # around a restored real value is harmless; deleting real
+                # asterisks is data loss.
                 if any(consumed[os:oe]):
                     start = b
                     continue

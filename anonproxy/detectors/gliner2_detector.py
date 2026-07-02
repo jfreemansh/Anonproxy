@@ -62,22 +62,25 @@ class Gliner2Detector:
             return False
 
     def detect(self, text: str):
-        from . import Match
+        from . import Match, chunk_text
         self._load()
-        result = self._model.extract_entities(
-            text, _REQUEST_LABELS,
-            threshold=self.settings.gliner2_threshold,
-            include_spans=True,
-        )
-        # GLiNER2 returns {"entities": {label: [value, ...]}}
-        entities = result.get("entities", {}) if isinstance(result, dict) else {}
         out = []
-        for label, values in entities.items():
-            etype = _LABEL_MAP.get(str(label).lower(), "OTHER")
-            for value in values:
-                v = value.get("text", "") if isinstance(value, dict) else str(value)
-                if v:
-                    out.append(Match(text=v, entity_type=etype, source="gliner2"))
+        seen = set()
+        for chunk in chunk_text(text):
+            result = self._model.extract_entities(
+                chunk, _REQUEST_LABELS,
+                threshold=self.settings.gliner2_threshold,
+                include_spans=True,
+            )
+            # GLiNER2 returns {"entities": {label: [value, ...]}}
+            entities = result.get("entities", {}) if isinstance(result, dict) else {}
+            for label, values in entities.items():
+                etype = _LABEL_MAP.get(str(label).lower(), "OTHER")
+                for value in values:
+                    v = value.get("text", "") if isinstance(value, dict) else str(value)
+                    if v and v not in seen:
+                        seen.add(v)
+                        out.append(Match(text=v, entity_type=etype, source="gliner2"))
         return out
 
     def status(self) -> dict:

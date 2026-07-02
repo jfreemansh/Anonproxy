@@ -59,12 +59,10 @@ def _stream(key: str, *parts: str) -> bytes:
     seed = hmac.new(key.encode(), "\x00".join(parts).encode(), hashlib.sha256).digest()
     out = bytearray(seed)
     counter = 0
-    while True:
-        # extend lazily; callers slice what they need
-        if len(out) < 4096:
-            counter += 1
-            out += hashlib.sha256(seed + counter.to_bytes(4, "big")).digest()
-        return bytes(out)
+    while len(out) < 4096:
+        counter += 1
+        out += hashlib.sha256(seed + counter.to_bytes(4, "big")).digest()
+    return bytes(out)
 
 
 def _pick(stream: bytes, alphabet: str, n: int, offset: int = 0) -> str:

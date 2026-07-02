@@ -52,3 +52,29 @@ def test_token_via_query_param():
                   headers={"X-Anonproxy-Token": "sekret"}).status_code == 200
     # query param (used by the audit page)
     assert tc.get("/anonproxy/export?token=sekret").status_code == 200
+
+
+def test_stats_reports_detector_failures():
+    tc, _ = _client()
+    r = tc.get("/anonproxy/stats?engagement=audit")
+    assert r.status_code == 200
+    assert r.json()["detector_failures"] == {}
+
+
+def test_floor_detector_failure_is_counted():
+    from anonproxy import Engine, Settings as EngineSettings
+    from anonproxy.detectors import RegexDetector
+
+    s = EngineSettings()
+    s.ephemeral = True
+    s.llm_enabled = False
+    engine = Engine(engagement="failcount", settings=s)
+    real_detect = RegexDetector.detect
+    RegexDetector.detect = lambda self, text: (_ for _ in ()).throw(RuntimeError("boom"))
+    try:
+        engine.anonymize("host 10.20.0.10")
+    finally:
+        RegexDetector.detect = real_detect
+    assert engine.detector_failures().get("regex") == 1
+    status = {d["name"]: d for d in engine.detector_status()}
+    assert status["regex"]["failures"] == 1

@@ -122,6 +122,8 @@ function renderStats(s) {
   const parts = [`<span class="pill">total: <b>${s.total||0}</b></span>`];
   for (const [k, v] of Object.entries(s.by_type || {}))
     parts.push(`<span class="pill">${k}: ${v}</span>`);
+  for (const [k, v] of Object.entries(s.detector_failures || {}))
+    if (v) parts.push(`<span class="pill" style="border-color:#f85149;color:#ff7b72">⚠ ${k} failed ×${v}</span>`);
   el.innerHTML = parts.join("");
 }
 

@@ -16,9 +16,19 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from anonproxy.config import Settings
-from anonproxy.proxy.app import create_app
+from anonproxy.proxy.app import create_app, _strip_v1
 
 CAPTURED = {}
+
+
+def test_strip_v1_handles_both_forms():
+    # OpenAI-style default: bare host, nothing to strip
+    assert _strip_v1("https://api.openai.com") == "https://api.openai.com"
+    # every OpenAI-compatible provider's docs give a base_url ending in /v1 —
+    # that must not double up with our own hardcoded /v1/... routes
+    assert _strip_v1("https://openrouter.ai/api/v1") == "https://openrouter.ai/api"
+    assert _strip_v1("https://openrouter.ai/api/v1/") == "https://openrouter.ai/api"
+    assert _strip_v1("https://openrouter.ai/api") == "https://openrouter.ai/api"
 
 
 def _user_text(body):
@@ -107,3 +117,72 @@ def test_streaming_roundtrip():
 
     assert "10.20.0.10" in restored
     assert "dc01.acmecorp.local" in restored
+
+
+def _url_capturing_mock(request: httpx.Request) -> httpx.Response:
+    CAPTURED["requested_url"] = str(request.url)
+    return httpx.Response(200, headers={"content-type": "application/json"},
+                          json={"choices": [{"message": {"role": "assistant", "content": "ok"}}]})
+
+
+def test_openai_upstream_with_trailing_v1_does_not_double_path():
+    """OpenRouter (and every other OpenAI-compatible provider) documents its
+    base_url INCLUDING /v1 — that must not collide with our own hardcoded
+    /v1/chat/completions route into .../v1/v1/chat/completions (a 404)."""
+    CAPTURED.clear()
+    s = Settings()
+    s.ephemeral = True
+    s.llm_enabled = False
+    s.openai_upstream = "https://openrouter.ai/api/v1"
+    mock = httpx.AsyncClient(transport=httpx.MockTransport(_url_capturing_mock))
+    tc = TestClient(create_app(s, client=mock))
+
+    tc.post("/v1/chat/completions", json={
+        "model": "test-model", "messages": [{"role": "user", "content": "hi"}],
+    })
+    assert CAPTURED["requested_url"] == "https://openrouter.ai/api/v1/chat/completions"
+
+
+def test_openai_upstream_bare_host_still_works():
+    CAPTURED.clear()
+    s = Settings()
+    s.ephemeral = True
+    s.llm_enabled = False
+    s.openai_upstream = "https://api.openai.com"
+    mock = httpx.AsyncClient(transport=httpx.MockTransport(_url_capturing_mock))
+    tc = TestClient(create_app(s, client=mock))
+
+    tc.post("/v1/chat/completions", json={
+        "model": "test-model", "messages": [{"role": "user", "content": "hi"}],
+    })
+    assert CAPTURED["requested_url"] == "https://api.openai.com/v1/chat/completions"
+
+
+def _echo_mock(request: httpx.Request) -> httpx.Response:
+    # doesn't assume valid JSON — used for the malformed-body tests below
+    return httpx.Response(200, headers={"content-type": "text/plain"}, text="ok")
+
+
+def test_malformed_body_forwards_by_default():
+    s = Settings()
+    s.ephemeral = True
+    s.llm_enabled = False
+    s.engagement_id = "malformed"
+    mock = httpx.AsyncClient(transport=httpx.MockTransport(_echo_mock))
+    tc = TestClient(create_app(s, client=mock))
+    r = tc.post("/v1/messages", content=b"not json",
+                headers={"x-api-key": "test", "content-type": "application/json"})
+    assert r.status_code == 200  # forwarded as-is, logged not blocked
+
+
+def test_malformed_body_blocked_in_strict_mode():
+    s = Settings()
+    s.ephemeral = True
+    s.llm_enabled = False
+    s.engagement_id = "strict"
+    s.strict_mode = True
+    mock = httpx.AsyncClient(transport=httpx.MockTransport(_echo_mock))
+    tc = TestClient(create_app(s, client=mock))
+    r = tc.post("/v1/messages", content=b"not json",
+                headers={"x-api-key": "test", "content-type": "application/json"})
+    assert r.status_code == 502

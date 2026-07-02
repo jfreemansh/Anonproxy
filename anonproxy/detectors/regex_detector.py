@@ -45,6 +45,14 @@ _rule("TOKEN",
       r"sessionid|session|sid|csrftoken|csrf_token|xsrf[-_]token|x-csrf-token|"
       r"access_token|refresh_token|id_token|auth_token|remember_token|bearer)"
       r"\s*[=:]\s*\"?([A-Za-z0-9._~+/=-]{6,})\"?", group=1)
+# Every app/CMS invents its own session cookie names (WordPress's
+# wordpress_logged_in_<hash>, wordpress_sec_<hash>, etc. aren't on any fixed
+# list above and never will be) — so also redact by STRUCTURE: any cookie
+# value in a Set-Cookie response header or a Cookie request header, whatever
+# it's named. Over-redacting a boring cookie is free; missing a live session
+# token is not.
+_rule("TOKEN", r"(?im)^set-cookie:\s*[\w.-]+=([^;\r\n]{4,})", group=1)
+_rule("TOKEN", r"(?im)(?:^cookie:\s*|;\s*)[\w.-]+=([^;\r\n]{4,})", group=1)
 
 # --- Hashes ----------------------------------------------------------------
 # LM:NT combined (pwdump / secretsdump format) — match before bare md5/sha
@@ -88,9 +96,13 @@ _rule(
 _rule("USERNAME", r"\b[A-Za-z0-9.-]{2,30}\\[A-Za-z0-9._-]{2,30}\b")   # CORP\jsmith
 
 # --- Credentials in labeled contexts (password=..., pass: ...) -------------
+# The value stops at whitespace OR `&` — without the `&` bound, a value inside
+# a form-urlencoded body (no whitespace anywhere) swallows every remaining
+# field on the line as one "credential", which then collides with whatever
+# else matched further down and gets silently dropped as "overlapping".
 _rule("CREDENTIAL",
       r"(?i)(?:password|passwd|pwd|pass|secret|api[_-]?key|token)\s*[:=]\s*"
-      r"(\S{6,})", group=1)
+      r"([^\s&]{6,})", group=1)
 
 # Payment card numbers: 13–19 digits, optionally space/dash grouped. Validated
 # with the Luhn checksum to keep false positives near zero (so we don't anonymize

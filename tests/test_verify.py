@@ -58,3 +58,12 @@ def test_adversarial_probe_no_outbound_leak():
     report = verify.run(s, use_llm=False)
     # regex-layer secrets must never appear in what would be sent upstream
     assert report["adversarial"]["leaked"] == []
+
+
+def test_tool_call_probe_no_leak():
+    s = Settings()
+    s.detectors = ["regex"]
+    report = verify.run(s, use_llm=False)
+    tcp = report["tool_call_probe"]
+    assert tcp["anthropic_tool_use_leak"] is False
+    assert tcp["openai_tool_call_leak"] is False
