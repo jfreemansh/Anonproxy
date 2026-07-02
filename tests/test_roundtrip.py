@@ -105,6 +105,17 @@ def test_consistency_same_surrogate_each_time():
     assert surr in a and surr in b
 
 
+def test_same_entity_different_casing_roundtrips_exactly():
+    # a real failure from a captured wp-admin page: "WordPress.org" and
+    # "wordpress.org" both appear in the same document. Collapsing them onto
+    # one surrogate meant the vault could remember only ONE original spelling
+    # — restoring the other occurrence produced the wrong casing.
+    engine = fresh_engine()
+    text = 'Link text "WordPress.org" points to wordpress.org in the footer.'
+    anon = engine.anonymize(text)
+    assert engine.deanonymize(anon) == text
+
+
 def test_format_preserving_shapes():
     engine = fresh_engine()
     import ipaddress

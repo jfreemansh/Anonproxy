@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import re
 from typing import Optional
+from urllib.parse import unquote
 
 from .config import Settings
 from .vault import Vault
@@ -67,11 +68,29 @@ class Engine:
         self.llm = next((d for d in self.detectors if d.name == "ollama"),
                         LLMDetector(self.settings))
         self.restorer = TolerantRestorer(tolerant=self.settings.restore_tolerant)
+        # a floor-detector crash means that call got zero deterministic
+        # coverage — track it so operators can see it during an engagement,
+        # not just in a log line nobody's tailing.
+        self._detector_failures: dict[str, int] = {}
+
+    def detector_failures(self) -> dict[str, int]:
+        return dict(self._detector_failures)
 
     # -- detection ----------------------------------------------------------
     def _detect(self, text: str, contextual: bool) -> dict[str, str]:
         entities: dict[str, str] = {}
         from_regex: set[str] = set()
+
+        # A URL-encoded delimiter (e.g. `%7C` for `|` in a Set-Cookie value)
+        # leaves an alnum byte glued directly onto the next token, defeating
+        # every \b-anchored floor rule (a hash right after `%7C` never matches
+        # \b[0-9a-fA-F]{64}\b, since there's no boundary between the "C" and
+        # the hash). Decode once, up front, and re-run floor detectors against
+        # it too — only pulling in matches whose exact text also appears
+        # verbatim in the raw text, so this only rescues values unaffected by
+        # decoding (hashes, tokens), not ones that change under it (passwords
+        # with encoded punctuation, which the CREDENTIAL regex handles directly).
+        decoded = unquote(text) if "%" in text else text
 
         # 1) deterministic floor (regex + scope seed) — trusted, wins for type
         for det in self.detectors:
@@ -79,10 +98,15 @@ class Engine:
                 continue
             try:
                 matches = det.detect(text)
+                if decoded != text:
+                    matches = list(matches) + list(det.detect(decoded))
             except Exception as e:
                 log.warning("floor detector %r failed: %s", det.name, e)
+                self._detector_failures[det.name] = self._detector_failures.get(det.name, 0) + 1
                 continue
             for m in matches:
+                if m.text not in text:
+                    continue  # only found via the decoded copy; doesn't exist raw
                 entities[m.text] = m.entity_type
                 from_regex.add(m.text)
 
@@ -97,6 +121,7 @@ class Engine:
                     matches = det.detect(text)
                 except Exception as e:
                     log.warning("detector %r failed: %s", det.name, e)
+                    self._detector_failures[det.name] = self._detector_failures.get(det.name, 0) + 1
                     continue
                 for m in matches:
                     if entities.get(m.text) in _REGEX_WINS:
@@ -163,11 +188,15 @@ class Engine:
         # single left-to-right pass, longest original first. Each original is
         # guarded with word boundaries on any alphanumeric edge so a short term
         # (e.g. a scope hostname "acme") is replaced as a whole token and never
-        # inside a larger word ("acmespeak").
+        # inside a larger word ("acmespeak"). A URL-encoded delimiter right
+        # before the value (e.g. `%7C` for `|` in a cookie) leaves a trailing
+        # alnum byte glued onto it — that also counts as a boundary, or a value
+        # sitting right after one (a hash after `%7C`) could never be matched
+        # even once correctly detected.
         def _bounded(o: str) -> str:
             pat = re.escape(o)
             if o[:1].isalnum() or o[:1] == "_":
-                pat = r"(?<!\w)" + pat
+                pat = r"(?:(?<!\w)|(?<=%[0-9a-fA-F]{2}))" + pat
             if o[-1:].isalnum() or o[-1:] == "_":
                 pat = pat + r"(?!\w)"
             return pat
@@ -201,6 +230,7 @@ class Engine:
                 st = det.status()
             except Exception as e:
                 st = {"available": False, "detail": str(e)}
+            st["failures"] = self._detector_failures.get(det.name, 0)
             out.append({"name": det.name, **st})
         return out
 

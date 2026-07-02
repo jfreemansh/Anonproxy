@@ -61,10 +61,14 @@ OVERALL       60/   77  (   78%)      77/77  (  100%)
 ## What makes it more reliable
 
 **1. Tolerant restoration.** Restoration matches a surrogate against a normalized
-projection of the reply (markdown noise removed, whitespace collapsed, case
-folded, unicode hyphens normalized) while keeping an index map back to the
-original text, so it recovers the value even when the model reformats it — and
-swallows the surrounding `**` / backticks cleanly. (`anonproxy/restorer.py`)
+projection of the reply (markdown noise *inside* the token removed, whitespace
+collapsed, case folded, unicode hyphens normalized) while keeping an index map
+back to the original text, so it recovers the value even when the model
+reformats it. It deliberately does **not** expand outward to eat markdown
+*around* a matched span (e.g. `**`/backticks hugging it) — those may be genuine
+original content rather than model-added formatting, and swallowing them
+corrupted real pages that happened to use `*emphasis*` near a redacted value.
+(`anonproxy/restorer.py`)
 
 **2. Streaming-safe.** A per-content-block hold-back buffer reassembles a
 surrogate split across SSE deltas before restoring it, so you get real values
@@ -72,9 +76,13 @@ surrogate split across SSE deltas before restoring it, so you get real values
 
 **3. Consistency by construction.** Surrogates are deterministic (HMAC keyed on
 the engagement id) *and* vault-backed, so the same original always maps to the
-same surrogate — even across restarts or a lost vault. A consistency rescan
-re-detects anything the vault has ever seen, so an entity caught once is caught
-every time. (`anonproxy/surrogates.py`, `anonproxy/engine.py`)
+same surrogate on an exact re-sighting — even across restarts or a lost vault.
+A consistency rescan re-detects anything the vault has ever seen, so an entity
+caught once is caught every time. (Two *different* casings of the same
+real-world value, e.g. `WordPress.org` and `wordpress.org` both appearing in
+one page, are treated as distinct sightings with their own surrogates — the
+alternative, collapsing them, can only remember one original spelling and gets
+the other one's restoration wrong.) (`anonproxy/surrogates.py`, `anonproxy/vault.py`)
 
 **4. Format-preserving surrogates.** A hash surrogate is hex of the same length;
 an AWS key keeps its `AKIA` prefix; an IP is a valid RFC 5737 TEST-NET address; a
@@ -200,6 +208,11 @@ type, with counts and CSV export. It binds to localhost and honours
 `ANONPROXY_API_TOKEN` if set; disable it with `ANONPROXY_AUDIT=false`. It exposes
 the reverse lookup, so treat it as an operator-only debug view.
 
+If a detector backend errors mid-engagement (a floor-detector crash, a contextual
+backend throwing), the stats bar shows a red `⚠ <name> failed ×N` pill instead of
+failing silently into a log line — check it if coverage looks off partway through
+a session.
+
 ## Engagement workflow
 
 1. **One engagement id per client** (`--engagement acme-2026`). This isolates the
@@ -232,8 +245,9 @@ the reverse lookup, so treat it as an operator-only debug view.
 | `ANONPROXY_AUDIT` | `true` | Serve the `/audit` dashboard. |
 | `PORT` / `HOST` | `8080` / `127.0.0.1` | Proxy listen address. |
 | `ANTHROPIC_UPSTREAM` | `https://api.anthropic.com` | Anthropic upstream. |
-| `OPENAI_UPSTREAM` | `https://api.openai.com` | OpenAI upstream. |
-| `ANONPROXY_API_TOKEN` | *(empty)* | Require `X-Anonproxy-Token` on the engine API. |
+| `OPENAI_UPSTREAM` | `https://api.openai.com` | Any OpenAI-compatible endpoint — OpenRouter, Groq, Together, etc. Paste the provider's documented `base_url` as-is, with or without a trailing `/v1`; both work (`https://openrouter.ai/api/v1` and `https://openrouter.ai/api` are equivalent here). |
+| `ANONPROXY_API_TOKEN` | *(empty)* | Require `X-Anonproxy-Token` on the engine API. **Empty means the engine API and `/audit` are unauthenticated** — fine on an isolated laptop bound to `127.0.0.1`, but set this if the proxy is ever reachable by anything else (a shared box, a tunneled VPS). |
+| `ANONPROXY_STRICT` | `false` | Fail closed (502) instead of forwarding a request unredacted when its body can't be parsed as JSON. Off by default so odd/legacy clients keep working. |
 
 ## Detection backends
 
@@ -245,31 +259,45 @@ wants:
 
 | Backend | Catches | Cost / setup |
 |---|---|---|
-| `regex` *(always on)* | IPs, CIDRs, hashes, JWTs, cloud keys, MACs, FQDNs, emails, labelled creds, **payment cards (Luhn), session cookies (PHPSESSID/JSESSIONID/…), Bearer/Basic auth, SSNs** | none — deterministic floor |
+| `regex` *(always on)* | IPs, CIDRs, hashes, JWTs, cloud keys, MACs, FQDNs, emails, labelled creds, payment cards (Luhn), Bearer/Basic auth, SSNs, and **any cookie value in a `Set-Cookie:`/`Cookie:` header — by structure, not by a fixed name list**, so a CMS's own custom session-cookie name (WordPress's `wordpress_logged_in_<hash>`, say) is caught the same as `PHPSESSID`. Also resilient to URL-encoded delimiters (`%7C` etc.) that would otherwise glue an alnum byte onto the next token and defeat a boundary-anchored match — a real, previously-silent gap on form-urlencoded bodies and cookie headers. | none — deterministic floor |
 | `ollama` *(default)* | bare hostnames, org/project/person names, unlabelled creds in prose | local Ollama + a model (`--model`) |
-| `gliner2` ⭐ *(recommended robust)* | 42 PII types, best span-level F1 on SPY (beats the others), <100ms | `pip install "anonproxy[gliner2]"`, CPU-friendly |
+| `gliner2` ⭐ *(recommended for general PII)* | 42 PII types, best span-level F1 on SPY (beats the others), <100ms — but its fixed taxonomy has **no hostname or organization label**, so it does not replace `ollama` for pentest-specific redaction | `pip install "anonproxy[gliner2]"`, CPU-friendly |
 | `openai-privacy-filter` | ~96–97% F1 PII (Apache-2.0, OpenAI) | `pip install "anonproxy[openai-pii]"` (torch) |
-| `gliner` | zero-shot person/org/username/hostname/email (older urchade model) | `pip install "anonproxy[gliner]"`, CPU-friendly |
+| `gliner` | zero-shot person/org/username/hostname/email — the older urchade model, but because it's zero-shot you can *ask* it for `hostname`/`organization`, which `gliner2` can't be asked for | `pip install "anonproxy[gliner]"`, CPU-friendly |
 | `piiranha` | high-accuracy passwords/emails/usernames (6 languages) | `pip install "anonproxy[piiranha]"` (torch) |
 | `anonymizer-slm` | purpose-built PII detect+replace (Eternis Qwen3 fine-tune) | import GGUF via `models/anonymizer-slm.Modelfile` |
 
-> **Newest / best recall:** `gliner2` (Fastino's GLiNER2-PII, May 2026) currently
-> tops the SPY PII benchmark — it's the recommended contextual backend when you
-> want maximum coverage. `ANONPROXY_DETECTORS=regex,gliner2`. (When pulling
-> `openai/privacy-filter`, use exactly that org — typosquats have appeared.)
+All four transformer backends (`gliner`, `gliner2`, `piiranha`, `openai-privacy-filter`)
+chunk large inputs internally — a transformer has a fixed context window, and
+handing one a whole multi-hundred-KB HTTP response either truncates coverage
+silently or exhausts memory. Chunking bounds memory while still scanning the
+full input.
+
+> **Best recall for general PII:** `gliner2` (Fastino's GLiNER2-PII, May 2026)
+> currently tops the SPY PII benchmark, runs in-process (no external service to
+> keep alive), and surfaces failures cleanly instead of swallowing them.
+> **It does not catch bare hostnames or client/org names** — that's the #1
+> redaction need on a pentest engagement, and nothing in its 42-label PII
+> taxonomy covers it. Don't drop `ollama` (or `gliner`) in favor of `gliner2`
+> alone; stack them instead: **`ANONPROXY_DETECTORS=regex,gliner2,ollama`**.
+> (When pulling `openai/privacy-filter`, use exactly that org — typosquats have
+> appeared.)
 >
 > **Web-app testing:** the regex floor now covers payment cards, session cookies,
 > Bearer/Basic auth and SSNs, so a lot of HTTP traffic is handled deterministically.
 > But **names and addresses in request/response bodies are not regex-detectable** —
-> for those add a PII model: `ANONPROXY_DETECTORS=regex,gliner2`. Always confirm on
-> real traffic with `python -m anonproxy verify`.
+> for those add a PII model. Always confirm on real traffic with
+> `python -m anonproxy verify`.
 
 ```bash
 # default, out of the box
 ANONPROXY_DETECTORS=regex,ollama python -m anonproxy serve
 
-# more robust: regex floor + a dedicated PII model, no Ollama needed
-ANONPROXY_DETECTORS=regex,gliner python -m anonproxy serve
+# recommended: fast general-PII coverage (gliner2) + hostnames/orgs/names (ollama)
+ANONPROXY_DETECTORS=regex,gliner2,ollama python -m anonproxy serve
+
+# no external service at all — zero-shot gliner covers hostname/org itself
+ANONPROXY_DETECTORS=regex,gliner,gliner2 python -m anonproxy serve
 
 # stack several — order is just declaration order; regex always wins for
 # structured types so a hash stays a hash
@@ -310,8 +338,9 @@ Two ways to cover bare names:
    tokens only (so `acme` won't touch `acmespeak`), and get the usual consistent,
    reversible surrogates.
 
-2. **A contextual backend** (`gliner2` / `ollama`) infers hostnames/org names it
-   wasn't told about — good for catching scope you forgot to list.
+2. **A contextual backend** (`ollama` or `gliner` — not `gliner2`, which doesn't
+   request hostname/org labels) infers hostnames/org names it wasn't told about
+   — good for catching scope you forgot to list.
 
 Use both: seed what you know, let the model catch the rest.
 
@@ -337,7 +366,10 @@ local model works. Secrets only a contextual backend can catch (bare hostnames,
 unlabelled creds) are shown as *needs-contextual* in regex-only mode rather than
 counted as leaks. It also runs an **adversarial "repeat the context verbatim"
 probe** that asserts no regex-layer secret could appear in what was sent
-upstream. Exit code is non-zero if anything real leaks.
+upstream, and a **tool-call payload probe** that checks an Anthropic `tool_use`
+block / OpenAI `tool_calls[].function.arguments` echoed back in conversation
+history doesn't leak a real value either — that path bypassed anonymization
+entirely until this check existed. Exit code is non-zero if anything real leaks.
 
 Check what's actually active any time:
 
@@ -348,12 +380,15 @@ curl -s http://127.0.0.1:8080/anonproxy/health | python -m json.tool
 
 If a configured Ollama model isn't pulled, the detector auto-falls back to an
 installed one and says so in `health` and `verify` (so "Ollama is running but no
-model" can't silently degrade you to regex-only).
+model" can't silently degrade you to regex-only). If Ollama dies or times out
+mid-engagement, the next request re-checks reachability instead of trusting a
+stale "available" — `health` will flip to `available: false` with the reason,
+rather than staying green while quietly returning zero detections.
 
 ## Tests
 
 ```bash
-python3 -m pytest -q                    # 78 tests: round-trip, streaming, proxy, audit, verify, detectors, webapp, scope, config, polish
+python3 -m pytest -q                    # 102 tests: round-trip, streaming, proxy, audit, verify, detectors, tool-calls, vault, llm_detector, webapp, scope, config, polish
 python3 scripts/benchmark_roundtrip.py  # naive vs tolerant pass-rate table
 ```
 
@@ -392,10 +427,13 @@ Inspired by [DontFeedTheAI](https://github.com/zeroc00I/DontFeedTheAI) and infor
 
 This is a **risk-reduction layer, not a privacy guarantee** (same honest framing
 as the original). It does not defend against query-pattern correlation, prompt
-injection in tool output, or compromise of the local host. It is not a substitute
-for reading what your NDA and engagement contract allow before using any cloud
-AI on client data. Verify coverage per engagement with the `/audit` page,
-`export`, and the test suite.
+injection in tool output, or compromise of the local host. It only anonymizes
+text — pasted screenshots or other non-text content bypass it entirely. It
+assumes a single proxy process; the vault's in-memory cache has no cross-process
+invalidation, so don't run it behind multiple workers (`serve` always starts
+one). It is not a substitute for reading what your NDA and engagement contract
+allow before using any cloud AI on client data. Verify coverage per engagement
+with the `/audit` page, `export`, and the test suite.
 
 ## License
 

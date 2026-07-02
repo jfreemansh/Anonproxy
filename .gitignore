@@ -1,5 +1,6 @@
 __pycache__/
 *.pyc
+.env
 *.sqlite
 *.sqlite-*
 .venv/
@@ -10,3 +11,6 @@ dist/
 .pytest_cache/
 burp/build/
 burp/.gradle/
+
+# real captured traffic — contains live credentials/session tokens, never commit
+testburp.txt

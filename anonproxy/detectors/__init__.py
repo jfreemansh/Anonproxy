@@ -28,6 +28,21 @@ class Match:
     confidence: float = 1.0
 
 
+def chunk_text(text: str, size: int = 1500, overlap: int = 200) -> list[str]:
+    """Split text into overlapping windows for transformer backends.
+
+    Transformer PII models have a fixed context window (~512 tokens); handing
+    them a whole 200KB HTTP response either silently truncates it (coverage
+    loss — a leak) or blows memory and gets the worker OOM-killed. Chunking
+    bounds memory and keeps full coverage; the overlap keeps an entity that
+    straddles a boundary intact in the neighbouring window.
+    """
+    if len(text) <= size:
+        return [text]
+    step = max(1, size - overlap)
+    return [text[i:i + size] for i in range(0, len(text), step)]
+
+
 from .regex_detector import detect as regex_detect  # noqa: E402
 from .llm_detector import LLMDetector  # noqa: E402
 
@@ -126,5 +141,5 @@ def build_detectors(settings) -> list:
     return detectors
 
 
-__all__ = ["Match", "regex_detect", "LLMDetector", "RegexDetector",
+__all__ = ["Match", "chunk_text", "regex_detect", "LLMDetector", "RegexDetector",
            "build_detectors"]

@@ -54,17 +54,20 @@ class GlinerDetector:
             return False
 
     def detect(self, text: str):
-        from . import Match
+        from . import Match, chunk_text
         self._load()
-        ents = self._model.predict_entities(
-            text, self.labels, threshold=self.settings.gliner_threshold)
         out = []
-        for e in ents:
-            etype = _LABEL_MAP.get(str(e.get("label", "")).lower(), "OTHER")
-            value = e.get("text", "")
-            if value:
-                out.append(Match(text=value, entity_type=etype,
-                                 source="gliner", confidence=float(e.get("score", 0.5))))
+        seen = set()
+        for chunk in chunk_text(text):
+            ents = self._model.predict_entities(
+                chunk, self.labels, threshold=self.settings.gliner_threshold)
+            for e in ents:
+                etype = _LABEL_MAP.get(str(e.get("label", "")).lower(), "OTHER")
+                value = e.get("text", "")
+                if value and value not in seen:
+                    seen.add(value)
+                    out.append(Match(text=value, entity_type=etype,
+                                     source="gliner", confidence=float(e.get("score", 0.5))))
         return out
 
     def status(self) -> dict:

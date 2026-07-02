@@ -160,7 +160,13 @@ class LLMDetector:
             r.raise_for_status()
             raw = r.json().get("response", "")
         except Exception as e:
-            log.debug("Ollama query failed: %s", e)
+            # available() caches its result for the process lifetime; if a
+            # live query fails, invalidate that cache so the NEXT detect()
+            # re-probes Ollama instead of silently returning [] forever while
+            # still reporting available=True on /health.
+            self._available = None
+            self._reason = f"Ollama query failed: {e}"
+            log.warning("%s — re-checking availability on next call", self._reason)
             return []
         return _parse(raw)
 
