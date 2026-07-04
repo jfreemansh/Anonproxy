@@ -62,7 +62,7 @@ public class AnonproxyExtension implements BurpExtension, HttpHandler {
     public void initialize(MontoyaApi api) {
         this.api = api;
         this.log = api.logging();
-        api.extension().setName("Anonproxy (Nethemba)");
+        api.extension().setName("Anonproxy");
         api.http().registerHttpHandler(this);
         log.logToOutput("Anonproxy loaded. Engine=" + ENGINE + " engagement=" + ENGAGEMENT);
     }
