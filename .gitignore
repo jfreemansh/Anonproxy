@@ -14,3 +14,4 @@ burp/.gradle/
 
 # real captured traffic — contains live credentials/session tokens, never commit
 testburp.txt
+.DS_Store

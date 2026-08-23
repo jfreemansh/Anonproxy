@@ -79,6 +79,13 @@ class Settings:
     ollama_timeout: int = field(default_factory=lambda: _env_int("OLLAMA_TIMEOUT", 60))
     llm_chunk_size: int = field(default_factory=lambda: _env_int("LLM_CHUNK_SIZE", 1500))
     llm_chunk_overlap: int = field(default_factory=lambda: _env_int("LLM_CHUNK_OVERLAP", 200))
+    # Contextual (non-regex, non-scope) single-token findings shorter than this
+    # are dropped as noise ("db", "sql" could be either a hostname or a word).
+    # Lower it if your engagement has short bare hostnames — or list them in
+    # the scope seed, which is never subject to this floor.
+    contextual_min_len: int = field(
+        default_factory=lambda: _env_int("ANONPROXY_CONTEXTUAL_MIN_LEN", 4)
+    )
 
     # Optional backends (only used if named in `detectors`).
     gliner_model: str = field(

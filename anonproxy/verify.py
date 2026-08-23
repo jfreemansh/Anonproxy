@@ -31,6 +31,10 @@ class Fixture:
     # (sensitive_string, layer) where layer is "regex" (must be caught even
     # without Ollama) or "llm" (needs the local model).
     secrets: list[tuple[str, str]] = field(default_factory=list)
+    # strings that must survive anonymization VERBATIM (they look like
+    # redactable tokens but are benign data — timestamps, durations). A miss
+    # here means the pipeline mangled real content.
+    preserved: list[str] = field(default_factory=list)
 
 
 FIXTURES: list[Fixture] = [
@@ -85,6 +89,15 @@ FIXTURES: list[Fixture] = [
          ("john@acmecorp.com", "regex"),
          ("4111 1111 1111 1111", "regex")],
     ),
+    Fixture(
+        "log timeline (benign hex-colon runs)",
+        "[2026-08-24 14:23:01] scan finished\n"
+        "started at 09:00:00, elapsed 05:23:01\n"
+        "uptime dc01.acmecorp.local: 3d 04:15:32\n"
+        "10.10.10.5 responded in 00:00:02.481\n",
+        [("dc01.acmecorp.local", "regex"), ("10.10.10.5", "regex")],
+        preserved=["14:23:01", "09:00:00", "05:23:01", "04:15:32", "00:00:02"],
+    ),
 ]
 
 
@@ -109,24 +122,30 @@ def run(settings: Settings | None = None, use_llm: bool = True) -> dict:
     total_leaks = 0
     total_needs_ctx = 0
     rt_failures = 0
+    preserved_failures = 0
 
     for fx in FIXTURES:
         anon = engine.anonymize(fx.text, is_tool_output=True, use_llm=contextual)
-        leaks, needs_ctx = [], []
+        leaks, needs_ctx, kept_misses = [], [], []
         for secret, layer in fx.secrets:
             if secret in anon:
                 if layer == "llm" and not contextual:
                     needs_ctx.append(secret)
                 else:
                     leaks.append(secret)
+        for keep in fx.preserved:
+            if keep not in anon:
+                kept_misses.append(keep)
         restored = engine.deanonymize(anon)
         rt_ok = restored == fx.text
         if not rt_ok:
             rt_failures += 1
+        preserved_failures += len(kept_misses)
         total_leaks += len(leaks)
         total_needs_ctx += len(needs_ctx)
         results.append({"fixture": fx.name, "leaks": leaks,
                         "needs_llm": needs_ctx, "roundtrip_ok": rt_ok,
+                        "preserved_misses": kept_misses,
                         "anonymized": anon})
 
     probe = _adversarial_probe(engine, contextual)
@@ -135,6 +154,7 @@ def run(settings: Settings | None = None, use_llm: bool = True) -> dict:
     return {"contextual_active": contextual, "detectors": det_status,
             "results": results, "total_leaks": total_leaks,
             "needs_llm": total_needs_ctx, "roundtrip_failures": rt_failures,
+            "preserved_failures": preserved_failures,
             "adversarial": probe, "tool_call_probe": tool_probe,
             "mappings": engine.export()}
 
@@ -191,7 +211,7 @@ def print_report(report: dict, show_mappings: bool = False) -> None:
     print("-" * 60)
 
     for r in report["results"]:
-        if r["leaks"]:
+        if r["leaks"] or r["preserved_misses"]:
             mark = "LEAK ✗"
         elif not r["roundtrip_ok"]:
             mark = "RT   ✗"
@@ -202,6 +222,8 @@ def print_report(report: dict, show_mappings: bool = False) -> None:
         print(f"  [{mark}] {r['fixture']}")
         for s in r["leaks"]:
             print(f"          LEAKED: {s!r}")
+        for s in r["preserved_misses"]:
+            print(f"          MANGLED (should have survived verbatim): {s!r}")
         for s in r["needs_llm"]:
             print(f"          needs contextual backend (not caught regex-only): {s!r}")
         if not r["roundtrip_ok"]:
@@ -236,8 +258,10 @@ def print_report(report: dict, show_mappings: bool = False) -> None:
     print("-" * 60)
     print(f"  leaks: {report['total_leaks']}   "
           f"round-trip failures: {report['roundtrip_failures']}   "
+          f"mangled-benign: {report['preserved_failures']}   "
           f"needs-contextual (regex-only): {report['needs_llm']}")
-    hard_fail = report["total_leaks"] or report["roundtrip_failures"] or adv["leaked"] or tool_leak
+    hard_fail = (report["total_leaks"] or report["roundtrip_failures"]
+                 or report["preserved_failures"] or adv["leaked"] or tool_leak)
     if not hard_fail:
         if report["needs_llm"] and not report["contextual_active"]:
             print("  RESULT: regex floor holds. Enable a contextual backend for "

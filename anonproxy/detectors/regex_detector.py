@@ -73,6 +73,23 @@ _rule("IP_ADDRESS", r"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d
 # IPv6 (loose but anchored on multiple hextet colons)
 _rule("IP_ADDRESS", r"\b(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{0,4}\b")
 
+
+def _ipv6_plausible(value: str) -> bool:
+    """Reject hex-colon runs that are really timestamps/durations (``14:23:01``).
+
+    The loose IPv6 pattern matches ANY run of hex groups joined by colons, which
+    includes ``HH:MM:SS`` timestamps and uptimes that saturate tool output —
+    mangling those into TEST-NET addresses corrupts real data. A plausible IPv6
+    literal either uses ``::`` compression or contains at least one full
+    4-hex-digit hextet; timestamps have neither. Every IPv6 form this rule
+    matched before the check has a 4-digit group, so this removes only false
+    positives. Known gaps (unchanged): fully-compressed forms like
+    ``fe80::1`` never satisfied the \b-anchored pattern anyway.
+    """
+    if "::" in value:
+        return True
+    return any(len(g) == 4 for g in value.split(":"))
+
 # --- URLs / domains / email ------------------------------------------------
 _rule("URL", r"\b[a-zA-Z][a-zA-Z0-9+.-]*://[^\s\"'`<>\]]+")
 _rule("EMAIL_ADDRESS", r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
@@ -157,6 +174,9 @@ def detect(text: str) -> list["Match"]:
                 continue
             value = m.group(group)
             if not value or value.lower() in SAFE_WORDS:
+                continue
+            if entity_type == "IP_ADDRESS" and ":" in value \
+                    and not _ipv6_plausible(value):
                 continue
             if overlaps(start, end):
                 continue

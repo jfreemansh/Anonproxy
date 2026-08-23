@@ -5,9 +5,12 @@ Routes
 ------
 LLM proxy (anonymize out, deanonymize back):
     POST /v1/messages            -> Anthropic Messages API
+    POST /v1/messages/count_tokens -> Anthropic token counting (anonymized too —
+                                    SDKs send the full payload here)
     POST /v1/chat/completions    -> OpenAI-compatible chat completions
     POST /v1/completions         -> OpenAI-compatible legacy completions
-    (any other path is passed through, routed by auth header)
+    (any other path is passed through, routed by auth header; in strict mode,
+     unknown POST/PUT/PATCH under /v1/* is refused instead of forwarded raw)
 
 Local engine API (used by the Burp extension and tooling):
     POST /anonproxy/anonymize     {text, engagement?, is_tool_output?}
@@ -37,6 +40,11 @@ log = logging.getLogger("anonproxy.app")
 
 _HOP_BY_HOP = {"host", "content-length", "connection", "keep-alive",
                "transfer-encoding", "accept-encoding", "content-encoding"}
+
+# Cap on concurrently live per-engagement engines. The engagement id comes from
+# a client-controlled header, so without a cap any caller could mint unbounded
+# engines (memory) and unbounded vault files under ANONPROXY_VAULT_DIR.
+_MAX_ENGINES = 64
 
 
 def _strip_v1(upstream: str) -> str:
@@ -79,11 +87,22 @@ def create_app(settings: Settings | None = None,
         await client.aclose()
 
     app = FastAPI(title="Anonproxy", version="0.1.0", lifespan=lifespan)
+    # exposed for tests/introspection: live engagement -> Engine cache
+    app.state.engines = engines
 
     def get_engine(engagement: str | None) -> Engine:
-        eid = engagement or settings.engagement_id
+        eid = (engagement or settings.engagement_id).strip()[:128]
+        if not eid:
+            eid = settings.engagement_id
         eng = engines.get(eid)
         if eng is None:
+            if len(engines) >= _MAX_ENGINES:
+                # FIFO eviction; disk-backed vaults reload on next use, and
+                # ephemeral vaults simply drop — either way bounded.
+                oldest = next(iter(engines))
+                del engines[oldest]
+                log.warning("engine cache full (%d); evicted engagement %r",
+                            _MAX_ENGINES, oldest)
             s = Settings()
             s.__dict__.update(settings.__dict__)
             s.engagement_id = eid
@@ -106,7 +125,10 @@ def create_app(settings: Settings | None = None,
 
     # ------------------------------------------------------------------ engine API
     @app.get("/anonproxy/health")
-    async def health():
+    async def health(request: Request):
+        # token-gated like every other engine endpoint: it reveals the detector
+        # chain, Ollama host and installed models.
+        check_token(request)
         eng = get_engine(None)
         return {"status": "ok", "engagement": settings.engagement_id,
                 "detectors": eng.detector_status()}
@@ -229,6 +251,14 @@ def create_app(settings: Settings | None = None,
     async def anthropic_messages(request: Request):
         return await _proxy(request, settings.anthropic_upstream, "anthropic")
 
+    @app.post("/v1/messages/count_tokens")
+    async def anthropic_count_tokens(request: Request):
+        # SDKs (and Claude Code) call this transparently with the FULL message
+        # payload — routing it through passthrough instead would ship real
+        # client data upstream unredacted. The response is just a token count,
+        # so the deanonymize pass over it is a harmless no-op.
+        return await _proxy(request, settings.anthropic_upstream, "anthropic")
+
     @app.post("/v1/chat/completions")
     async def openai_chat(request: Request):
         return await _proxy(request, settings.openai_upstream, "openai")
@@ -241,6 +271,16 @@ def create_app(settings: Settings | None = None,
     @app.api_route("/{full_path:path}",
                    methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
     async def passthrough(request: Request, full_path: str):
+        # An unknown /v1/* write endpoint may carry conversation-shaped payloads
+        # we can't anonymize (embeddings, legacy completions, future API surface).
+        # In strict mode, fail closed rather than forward them unredacted.
+        if (settings.strict_mode and request.method in ("POST", "PUT", "PATCH")
+                and (full_path == "v1" or full_path.startswith("v1/"))):
+            raise HTTPException(
+                status_code=404,
+                detail="anonproxy strict mode: unknown /v1 endpoint not "
+                       "forwarded (it would bypass request anonymization)",
+            )
         # route by auth header: x-api-key => Anthropic, else OpenAI
         upstream = (settings.anthropic_upstream
                     if request.headers.get("x-api-key")

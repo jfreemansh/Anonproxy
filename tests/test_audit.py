@@ -33,6 +33,17 @@ def test_audit_disabled():
     assert tc.get("/audit").status_code == 404
 
 
+def test_audit_page_escapes_llm_derived_fields():
+    # entity types flow into innerHTML from data parsed out of hostile client
+    # traffic; both interpolation sites must go through esc(), and the page
+    # must support reading the token from the URL fragment (#token=...)
+    from anonproxy import audit
+    page = audit.render_page("audit", token_required=False)
+    assert "${esc(k)}" in page
+    assert "${esc(t)}" in page
+    assert "#token=" in page
+
+
 def test_export_reflects_anonymized_entities():
     tc, _ = _client()
     tc.post("/anonproxy/anonymize",

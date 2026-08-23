@@ -186,3 +186,83 @@ def test_malformed_body_blocked_in_strict_mode():
     r = tc.post("/v1/messages", content=b"not json",
                 headers={"x-api-key": "test", "content-type": "application/json"})
     assert r.status_code == 502
+
+
+# --- unhandled /v1 paths must not become a leak path -------------------------
+
+def test_count_tokens_is_anonymized():
+    """SDKs send the FULL message payload to /v1/messages/count_tokens; it must
+    be anonymized like /v1/messages, never passed through raw."""
+    CAPTURED.clear()
+    tc = make_client()
+    r = tc.post("/v1/messages/count_tokens", json={
+        "model": "claude-3-5-sonnet",
+        "messages": [{"role": "user", "content": "Scan 10.20.0.10 on dc01.acmecorp.local"}],
+    }, headers={"x-api-key": "test"})
+    assert r.status_code == 200
+    assert "10.20.0.10" not in CAPTURED["user_text"]
+    assert "acmecorp" not in CAPTURED["user_text"]
+
+
+def _passthrough_client(strict=False):
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, str(request.url)))
+        return httpx.Response(200, headers={"content-type": "text/plain"}, text="ok")
+
+    s = Settings()
+    s.ephemeral = True
+    s.llm_enabled = False
+    s.engagement_id = "pt"
+    s.strict_mode = strict
+    tc = TestClient(create_app(
+        s, client=httpx.AsyncClient(transport=httpx.MockTransport(handler))))
+    return tc, calls
+
+
+def test_strict_mode_refuses_unknown_v1_write_paths():
+    tc, calls = _passthrough_client(strict=True)
+    r = tc.post("/v1/embeddings", json={"input": "secret 10.20.0.10"})
+    assert r.status_code == 404
+    assert calls == []   # nothing reached upstream unredacted
+
+
+def test_non_strict_still_forwards_unknown_v1_paths():
+    tc, calls = _passthrough_client()
+    assert tc.post("/v1/embeddings", json={"input": "hi"}).status_code == 200
+    assert len(calls) == 1
+
+
+def test_strict_mode_still_allows_v1_reads():
+    tc, calls = _passthrough_client(strict=True)
+    assert tc.get("/v1/models").status_code == 200
+    assert len(calls) == 1
+
+
+# --- engine API hardening ----------------------------------------------------
+
+def test_health_requires_token_when_set():
+    s = Settings()
+    s.ephemeral = True
+    s.llm_enabled = False
+    s.engagement_id = "h"
+    s.engine_api_token = "sekret"
+    mock = httpx.AsyncClient(transport=httpx.MockTransport(_echo_mock))
+    tc = TestClient(create_app(s, client=mock))
+    assert tc.get("/anonproxy/health").status_code == 401
+    assert tc.get("/anonproxy/health",
+                  headers={"X-Anonproxy-Token": "sekret"}).status_code == 200
+
+
+def test_engagement_engine_cache_is_bounded():
+    from anonproxy.proxy.app import _MAX_ENGINES
+    s = Settings()
+    s.ephemeral = True
+    s.llm_enabled = False
+    s.engagement_id = "cap"
+    app = create_app(s, client=httpx.AsyncClient(transport=httpx.MockTransport(_echo_mock)))
+    tc = TestClient(app)
+    for i in range(_MAX_ENGINES + 16):   # far more distinct engagements than fit
+        assert tc.get(f"/anonproxy/stats?engagement=eng{i}").status_code == 200
+    assert len(app.state.engines) <= _MAX_ENGINES

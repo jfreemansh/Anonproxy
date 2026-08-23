@@ -203,6 +203,7 @@ def run() -> int:
         "ANONPROXY_AUDIT=true",
     ]
     env_path.write_text("\n".join(lines) + "\n")
+    env_path.chmod(0o600)   # the .env may hold the API token; keep it private
     print(f"\nWrote {env_path.resolve()}")
 
     base = f"http://127.0.0.1:{port}"
@@ -210,7 +211,7 @@ def run() -> int:
     print("-" * 32)
     print(f"  Claude Code:   export ANTHROPIC_BASE_URL={base}")
     print(f"  OpenAI SDK:    base_url = \"{base}/v1\"")
-    print(f"  Audit page:    {base}/audit" + (f"?token={token}" if token else ""))
+    print(f"  Audit page:    {base}/audit" + (f"#token={token}" if token else ""))
     print()
 
     if _yesno("Launch the proxy now?", True):

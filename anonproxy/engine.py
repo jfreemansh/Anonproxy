@@ -146,8 +146,11 @@ class Engine:
 
         return self._filter(entities, from_regex)
 
-    @staticmethod
-    def _filter(entities: dict[str, str], from_regex: set[str]) -> dict[str, str]:
+    def _filter(self, entities: dict[str, str], from_regex: set[str]) -> dict[str, str]:
+        # floor for contextual findings: a lone token shorter than this is more
+        # likely an ordinary word than a hostname ("db", "sql"). Regex/scope
+        # matches bypass it. Configurable via ANONPROXY_CONTEXTUAL_MIN_LEN.
+        min_len = max(1, int(getattr(self.settings, "contextual_min_len", 4)))
         out: dict[str, str] = {}
         for word, etype in entities.items():
             w = word.strip()
@@ -157,7 +160,7 @@ class Engine:
             tokens = w.split()
             # drop allowlisted / too-short single tokens (unless regex found them)
             if w not in from_regex:
-                if len(tokens) == 1 and len(w) < 4:
+                if len(tokens) == 1 and len(w) < min_len:
                     continue
                 if lower in _SAFE:
                     continue

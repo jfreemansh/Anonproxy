@@ -88,8 +88,16 @@ _PAGE = r"""<!doctype html>
 
 <script>
 const TOKEN_REQUIRED = __TOKEN_REQUIRED__;
+// token via ?token= (legacy) or #token= (preferred — fragments are never sent
+// to the server, so they stay out of access logs; they do land in history
+// either way, so clear the URL after reading)
 const params = new URLSearchParams(location.search);
-const token = params.get("token") || "";
+let token = params.get("token") || "";
+if (!token && location.hash.startsWith("#token=")) {
+  try { token = decodeURIComponent(location.hash.slice("#token=".length)); }
+  catch { token = location.hash.slice("#token=".length); }
+}
+if (token) history.replaceState(null, "", location.pathname + location.search);
 let data = [], sortKey = "entity_type", sortAsc = true, timer = null;
 
 function headers() {
@@ -120,10 +128,12 @@ async function load() {
 function renderStats(s) {
   const el = document.getElementById("stats");
   const parts = [`<span class="pill">total: <b>${s.total||0}</b></span>`];
+  // entity types can originate from LLM output parsed out of hostile client
+  // traffic — never interpolate them into innerHTML unescaped
   for (const [k, v] of Object.entries(s.by_type || {}))
-    parts.push(`<span class="pill">${k}: ${v}</span>`);
+    parts.push(`<span class="pill">${esc(k)}: ${v}</span>`);
   for (const [k, v] of Object.entries(s.detector_failures || {}))
-    if (v) parts.push(`<span class="pill" style="border-color:#f85149;color:#ff7b72">⚠ ${k} failed ×${v}</span>`);
+    if (v) parts.push(`<span class="pill" style="border-color:#f85149;color:#ff7b72">⚠ ${esc(k)} failed ×${v}</span>`);
   el.innerHTML = parts.join("");
 }
 
@@ -132,7 +142,7 @@ function populateTypes() {
   const cur = sel.value;
   const types = [...new Set(data.map(d => d.entity_type))].sort();
   sel.innerHTML = '<option value="">all types</option>' +
-    types.map(t => `<option ${t===cur?"selected":""}>${t}</option>`).join("");
+    types.map(t => `<option ${t===cur?"selected":""}>${esc(t)}</option>`).join("");
 }
 
 function render() {

@@ -1,5 +1,6 @@
 """Polish: Luhn-valid card surrogates + precise-span-wins de-wrapping."""
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -15,6 +16,20 @@ def _engine(detectors=("regex",)):
     s.ephemeral = True
     s.detectors = list(detectors)
     return Engine(settings=s)
+
+
+def test_lm_nt_hash_surrogate_is_engagement_keyed():
+    """pwdump-style LM:NT hashes used to take a hardcoded side key, so the same
+    hash mapped to the same surrogate across ALL engagements (linkability)."""
+    lm_nt = "aad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c"
+    a = surrogates.generate("HASH", lm_nt, engagement="client-a")
+    b = surrogates.generate("HASH", lm_nt, engagement="client-b")
+    assert a != b                                   # not linkable across clients
+    assert a == surrogates.generate("HASH", lm_nt, engagement="client-a")  # deterministic within one
+    assert a.count(":") == lm_nt.count(":")         # LM:NT structure kept
+    for part_o, part_s in zip(lm_nt.split(":"), a.split(":")):
+        assert len(part_o) == len(part_s)
+        assert re.fullmatch(r"[0-9a-f]+", part_s)
 
 
 def test_card_surrogate_is_luhn_valid_and_formatted():

@@ -233,6 +233,7 @@ a session.
 | `ENGAGEMENT_ID` | `default` | **Change per client.** Isolates the vault. |
 | `ANONPROXY_SCOPE` | *(empty)* | Comma list of client domains/hostnames/orgs always anonymized. |
 | `ANONPROXY_SCOPE_FILE` | *(empty)* | File of scope terms (one per line, optional `value=TYPE`). |
+| `ANONPROXY_CONTEXTUAL_MIN_LEN` | `4` | Contextual single-token findings shorter than this are dropped as noise (`db`, `sql`). Scope terms and regex matches bypass it. |
 | `ANONPROXY_DETECTORS` | `regex,ollama` | Backend chain (see [Detection backends](#detection-backends)). |
 | `LLM_ENABLED` | `true` | `false` = drop the Ollama backend. |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama endpoint. |
@@ -342,6 +343,11 @@ Two ways to cover bare names:
    request hostname/org labels) infers hostnames/org names it wasn't told about
    — good for catching scope you forgot to list.
 
+> **Very short bare names** (`db`, `sql`, `dc1`): a contextual single token
+> under 4 characters is dropped as probable noise, not a hostname. Put short
+> names on the scope list (deterministic, always caught), or lower
+> `ANONPROXY_CONTEXTUAL_MIN_LEN`.
+
 Use both: seed what you know, let the model catch the rest.
 
 ## Verify coverage before an engagement
@@ -388,7 +394,7 @@ rather than staying green while quietly returning zero detections.
 ## Tests
 
 ```bash
-python3 -m pytest -q                    # 102 tests: round-trip, streaming, proxy, audit, verify, detectors, tool-calls, vault, llm_detector, webapp, scope, config, polish
+python3 -m pytest -q                    # 114 tests: round-trip, streaming, proxy, audit, verify, detectors, tool-calls, vault, llm_detector, webapp, scope, config, polish
 python3 scripts/benchmark_roundtrip.py  # naive vs tolerant pass-rate table
 ```
 

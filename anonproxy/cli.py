@@ -85,15 +85,19 @@ def main(argv=None) -> int:
         verify.print_report(report, show_mappings=args.show_mappings)
         tcp = report["tool_call_probe"]
         hard_fail = (report["total_leaks"] or report["roundtrip_failures"]
+                     or report["preserved_failures"]
                      or report["adversarial"]["leaked"]
                      or tcp["anthropic_tool_use_leak"] or tcp["openai_tool_call_leak"])
         return 1 if hard_fail else 0
 
     if args.cmd == "audit":
         import webbrowser
+        from urllib.parse import quote
         url = f"http://{settings.host}:{settings.port}/audit"
         if settings.engine_api_token:
-            url += f"?token={settings.engine_api_token}"
+            # fragment, not query: #fragments are never sent to the server, so
+            # the token stays out of access logs; the page reads location.hash.
+            url += "#token=" + quote(settings.engine_api_token, safe="")
         print(f"Opening {url}")
         webbrowser.open(url)
         return 0

@@ -15,6 +15,10 @@ def test_regex_only_no_leaks_and_roundtrip():
     report = verify.run(s, use_llm=False)
     assert report["total_leaks"] == 0, report["results"]
     assert report["roundtrip_failures"] == 0, report["results"]
+    # benign hex-colon runs (timestamps/uptimes) must survive verbatim
+    assert report["preserved_failures"] == 0, report["results"]
+    names = [r["fixture"] for r in report["results"]]
+    assert "log timeline (benign hex-colon runs)" in names
 
 
 def test_llm_tagged_secrets_flagged_not_leaked_without_ollama():

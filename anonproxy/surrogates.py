@@ -152,10 +152,14 @@ def _cidr(original: str, s: bytes) -> str:
 def _hash_like(original: str, s: bytes) -> str:
     """Preserve length and case-style of the hash so its type stays recognizable.
 
-    NTLM/LM hashes are often ``LM:NT`` — keep the colon structure too.
+    NTLM/LM hashes are often ``LM:NT`` — keep the colon structure too. Each part
+    derives its own stream from ``s`` (which already mixes in the engagement
+    id), so the same hash never maps to the same surrogate across engagements.
     """
     if ":" in original and re.fullmatch(r"[0-9a-fA-F:]+", original):
-        return ":".join(_hash_like(part, _stream("x", part)) for part in original.split(":"))
+        return ":".join(
+            _hash_like(part, hashlib.sha256(s + part.encode()).digest())
+            for part in original.split(":"))
     upper = original.isupper()
     n = len(original)
     out = _pick(s, _HEX, n)
