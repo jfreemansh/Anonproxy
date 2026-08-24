@@ -42,6 +42,13 @@ def _data_event(event: str, payload: dict) -> str:
 _DELTA_FIELD = {"text_delta": "text", "input_json_delta": "partial_json"}
 
 
+def _json_fragment(text: str) -> str:
+    """Escape restored text for embedding inside a JSON *string* the client
+    is assembling incrementally (partial_json / arguments): quotes,
+    backslashes and control characters must not break accumulation."""
+    return json.dumps(text, ensure_ascii=False)[1:-1]
+
+
 async def anthropic_stream(engine, aiter_bytes) -> AsyncIterator[str]:
     restorers: dict[int, tuple[object, str]] = {}  # idx -> (StreamRestorer, delta type)
     async for line in _lines(aiter_bytes):
@@ -68,7 +75,10 @@ async def anthropic_stream(engine, aiter_bytes) -> AsyncIterator[str]:
                     dtype,
                 )
             sr, _ = entry
-            obj["delta"][field] = sr.push(obj["delta"].get(field, ""))
+            restored = sr.push(obj["delta"].get(field, ""))
+            if field == "input_json_delta" and restored:
+                restored = _json_fragment(restored)
+            obj["delta"][field] = restored
             yield f"data: {json.dumps(obj)}\n\n"
         elif etype == "content_block_stop":
             idx = obj.get("index", 0)
@@ -78,6 +88,8 @@ async def anthropic_stream(engine, aiter_bytes) -> AsyncIterator[str]:
                 tail = sr.flush()
                 if tail:
                     field = _DELTA_FIELD[dtype]
+                    if field == "input_json_delta":
+                        tail = _json_fragment(tail)
                     yield _data_event("content_block_delta", {
                         "type": "content_block_delta", "index": idx,
                         "delta": {"type": dtype, field: tail},
@@ -136,5 +148,5 @@ async def openai_stream(engine, aiter_bytes) -> AsyncIterator[str]:
                     sr = tool_restorers.get(key)
                     if sr is None:
                         sr = tool_restorers[key] = engine.stream_restorer(json_args=True)
-                    fn["arguments"] = sr.push(args)
+                    fn["arguments"] = _json_fragment(sr.push(args))
         yield f"data: {json.dumps(obj)}\n\n"
