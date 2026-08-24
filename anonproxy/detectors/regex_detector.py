@@ -122,12 +122,19 @@ _rule(
 _rule("USERNAME", r"\b[A-Za-z0-9.-]{2,30}\\(?![nrt\"'\\])[A-Za-z0-9._-]{2,30}\b")   # CORP\jsmith
 
 # Labeled usernames: "username":"nickkilla", log=nickkilla&, user=jsmith —
-# the label is right there, no model needed. Requires a leading letter so
-# ids and booleans (user=1, user=true) don't become "usernames".
+# the label is right there, no model needed. Two branches, tuned against
+# field false positives from real burp exports:
+#   * `=` (query/form params) stays loose — URL params are unambiguous.
+#   * `:` requires a QUOTED JSON key. Unquoted `key:"value"` colon pairs are
+#     JS object literals / i18n tables (User:"Failed", log:"Hit") and flooded
+#     the vault with UI-label words as "usernames". Booleans/numbers excluded.
 _rule("USERNAME",
       r"(?i)\b(?:username|user[_-]?name|screen[_-]?name|login|logname|log|user)"
-      r"\"?\]?\s*[=:]\s*\"?(?!(?:true|false|null|none)\b)"
+      r"\"?\]?\s*=\s*\"?(?!(?:true|false|null|none)\b)"
       r"([A-Za-z][A-Za-z0-9._@-]{2,31})", group=1)
+_rule("USERNAME",
+      r"\"(?:username|user[_-]?name|screen[_-]?name|login)\"\s*:\s*\""
+      r"([A-Za-z][A-Za-z0-9._@-]{1,31})\"", group=1)
 
 # --- Credentials in labeled contexts (password=..., pass: ...) -------------
 # The value stops at whitespace OR `&` — without the `&` bound, a value inside
