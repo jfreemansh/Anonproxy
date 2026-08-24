@@ -56,6 +56,26 @@ def _port_open(port: int) -> bool:
         return False
 
 
+def _notify(title: str, subtitle: str = "", message: str = "") -> None:
+    """Best-effort notification — rumps raises when python3 lacks an app
+    bundle (no Info.plist / CFBundleIdentifier); the menu itself still works.
+    Enable real notifications with:
+      /usr/libexec/PlistBuddy -c 'Add :CFBundleIdentifier string "rumps"' \\
+          "$(dirname "$(command -v python3)")/Info.plist"
+    """
+    try:
+        _notify(title, subtitle, message)
+    except Exception:
+        pass
+
+
+def _alert(title: str, message: str = "") -> None:
+    try:
+        rumps.alert(title, message)
+    except Exception:
+        _notify(title, "", message)
+
+
 class AnonproxyBar(rumps.App):
     def __init__(self):
         super().__init__("🛡️", quit_button="Quit")
@@ -72,7 +92,7 @@ class AnonproxyBar(rumps.App):
         self._rebuild()
         self.timer = rumps.Timer(lambda _t: self._tick(), 3)
         self.timer.start()
-        rumps.notification("Anonproxy menubar", "",
+        _notify("Anonproxy menubar", "",
                            f"selected engagement: {self.selected}")
 
     # ------------------------------------------------------------------ state
@@ -108,7 +128,7 @@ class AnonproxyBar(rumps.App):
         self.running_profile = prof.name
         self.store.touch(prof.name)
         self._rebuild()
-        rumps.notification("Anonproxy started",
+        _notify("Anonproxy started",
                            f"engagement {prof.name}", f"http://127.0.0.1:{prof.port}")
 
     def _stop(self, notify: bool = True) -> None:
@@ -122,7 +142,7 @@ class AnonproxyBar(rumps.App):
         self.running_profile = None
         self._rebuild()
         if notify:
-            rumps.notification("Anonproxy stopped", "", "")
+            _notify("Anonproxy stopped", "", "")
 
     def _shutdown_child(self) -> None:
         if self.proc and self.proc.poll() is None:
@@ -148,9 +168,9 @@ class AnonproxyBar(rumps.App):
         while self._ui:
             kind, kw = self._ui.pop(0)
             if kind == "alert":
-                rumps.alert(kw.get("title", "Anonproxy"), kw.get("message", ""))
+                _alert(kw.get("title", "Anonproxy"), kw.get("message", ""))
             elif kind == "notify":
-                rumps.notification(kw.get("title", ""), kw.get("subtitle", ""),
+                _notify(kw.get("title", ""), kw.get("subtitle", ""),
                                    kw.get("message", ""))
         self.title = (ICON_ON if self._is_running()
                       else ICON_EXT if self._external_port() else ICON_OFF)
@@ -198,7 +218,7 @@ class AnonproxyBar(rumps.App):
             old = self.running_profile
             self._stop(notify=False)
             self._start(name)
-            rumps.notification("Switched engagement",
+            _notify("Switched engagement",
                                f"{old} → {name}", "vaults stay isolated")
         else:
             self._rebuild()
@@ -241,7 +261,7 @@ class AnonproxyBar(rumps.App):
         prof = self.store.get(self.selected)
         text = "\n".join(client_env_lines(prof))
         ok = copy_to_clipboard(text + "\n")
-        rumps.notification("Client env",
+        _notify("Client env",
                            "copied to clipboard" if ok else "clipboard unavailable",
                            f"ANTHROPIC_BASE_URL=http://127.0.0.1:{prof.port}")
 
@@ -255,7 +275,7 @@ class AnonproxyBar(rumps.App):
         webbrowser.open(url)
 
     def verify_coverage(self, sender) -> None:
-        rumps.notification("Anonproxy verify", "running",
+        _notify("Anonproxy verify", "running",
                            "checking coverage (regex floor + backends)…")
 
         def bg():
