@@ -241,8 +241,8 @@ without `--daemon` behaves like `serve` with the profile applied.
 On macOS there's also a **native status-bar app** — pick an engagement,
 Start/Stop, ＋ **New engagement…** (a real form: name, scope terms, port,
 notes, ephemeral toggle), copy client env, open `/audit`, run `verify`, and
-one-click **Export & archive vault…** close-out. Prebuilt `Anonbar-arm64.zip`
-and `Anonbar-x86_64.zip` (Python runtime and dependencies *embedded* — the
+one-click **Export & archive vault…** close-out. Prebuilt `Anonbar-macos-arm64.zip`
+and `Anonbar-macos-intel.zip` (Python runtime and dependencies *embedded* — the
 machine needs nothing installed) live on the
 [Releases](../../releases) page; see [Quick start A](#a-macos-app-recommended).
 
@@ -314,6 +314,23 @@ curl -s "http://127.0.0.1:8099/v1beta/models/gemini-2.5-flash:generateContent?ke
 
 Upstream defaults to `generativelanguage.googleapis.com` (override with
 `GOOGLE_UPSTREAM`).
+
+## MCP servers (`anonproxy mcp`)
+
+Wrap **any stdio MCP server** so its tool *results* are anonymized before
+they enter model context — host→server traffic passes through untouched:
+
+```jsonc
+// .mcp.json — point the host at the wrapper instead of the server binary
+{ "mcpServers": { "nmap": {
+    "command": "anonproxy",
+    "args": ["mcp", "--", "nmap-mcp-server", "--some-flag"] } } }
+```
+
+Server→host messages have every detected entity replaced inside
+`result.content[].text`, resource `contents[].text`, and legacy string
+`content`; ids/methods/params stay verbatim. Restoration back to real values
+uses the same engagement vault as everything else.
 
 ## Audit dashboard
 
@@ -543,7 +560,7 @@ rather than staying green while quietly returning zero detections.
 ## Tests
 
 ```bash
-python3 -m pytest -q                    # 132 tests: round-trip, streaming, proxy, audit, verify, detectors, tool-calls, vault, profiles, llm_detector, webapp, scope, config, polish
+python3 -m pytest -q                    # 134 tests: round-trip, streaming, proxy, audit, verify, detectors, tool-calls, vault, profiles, llm_detector, webapp, scope, config, polish
 python3 scripts/benchmark_roundtrip.py  # naive vs tolerant pass-rate table
 ```
 
@@ -595,7 +612,7 @@ security issues go to [SECURITY.md](SECURITY.md).
 ## Releases & CI
 
 Pushing a tag (`vX.Y.Z`) triggers two GitHub Actions workflows:
-`Anonbar-arm64.zip` + `Anonbar-x86_64.zip` (self-contained apps with the
+`Anonbar-macos-arm64.zip` + `Anonbar-macos-intel.zip` (self-contained apps with the
 Python runtime embedded) are attached to the release, and matching sdist +
 wheel are published to [PyPI](https://pypi.org/project/anonproxy/) via
 trusted publishing.

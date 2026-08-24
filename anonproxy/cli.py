@@ -104,6 +104,9 @@ def main(argv=None) -> int:
     envp = sub.add_parser("env", help="print/copy client env lines for a profile")
     envp.add_argument("profile", nargs="?", default=None)
     envp.add_argument("--copy", action="store_true", dest="do_copy")
+    mcpp = sub.add_parser("mcp", help="wrap an MCP stdio server (host -- server)")
+    mcpp.add_argument("cmd", nargs=argparse.REMAINDER, metavar="COMMAND")
+
     closep = sub.add_parser("close", help="export mappings to evidence files + wipe vault")
     closep.add_argument("profile", nargs="?", default=None)
     closep.add_argument("--keep-vault", action="store_true", dest="keep_vault")
@@ -228,6 +231,10 @@ def main(argv=None) -> int:
         print(f"# audit: {audit}" +
               ("  (token-gated: see ANONPROXY_API_TOKEN)" if settings.engine_api_token else ""))
         return 0
+
+    if args.cmd == "mcp":
+        from . import mcp_wrapper
+        sys.exit(mcp_wrapper.main(args.cmd, settings))
 
     if args.cmd == "close":
         prof = _resolve_profile(args.profile)
