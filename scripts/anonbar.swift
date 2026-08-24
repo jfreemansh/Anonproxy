@@ -211,8 +211,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var childProfile: String?
     var setupInProgress = false
 
+    // Embedded runtime shipped inside the app (Contents/Frameworks/python):
+    // zero system-python requirement, zero first-run network. Falls back to a
+    // system >=3.10 + private venv only for source builds without a runtime.
+    var bundledPy: String? {
+        guard let frameworks = Bundle.main.resourceURL?
+            .deletingLastPathComponent()
+            .appendingPathComponent("Frameworks") as URL? else { return nil }
+        let cand = frameworks.appendingPathComponent("python/bin/python3").path
+        return FileManager.default.isExecutableFile(atPath: cand) ? cand : nil
+    }
+
     lazy var venvPy: String =
         anonDir.appendingPathComponent("venv/bin/python").path
+
+    /// The interpreter children must use: embedded runtime when shipped,
+    /// otherwise the private venv created on first start.
+    func childPython() -> String {
+        bundledPy ?? venvPy
+    }
 
     func venvReady() -> Bool {
         FileManager.default.isExecutableFile(atPath: venvPy)
@@ -227,21 +244,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return nil
     }
 
+    func minorVersion(ofInterpreter path: String) -> Int? {
+        // "Python 3.12.13" -> 12 ; nil when not Python 3.x / not runnable
+        let r = sh([path, "-V"], cwd: home, timeout: 10)
+        guard r.0 == 0, r.1.contains("Python 3") else { return nil }
+        let parts = r.1.split(separator: ".")
+        guard parts.count >= 2 else { return nil }
+        return Int(parts[1].prefix(while: { $0.isNumber }))
+    }
+
+    func find310() -> String? {
+        let nsHome = NSHomeDirectory()
+        let candidates = [pythonBin,
+                          nsHome + "/.pyenv/shims/python3",
+                          "/opt/homebrew/bin/python3",
+                          "/usr/local/bin/python3"]
+        for c in candidates where FileManager.default.isExecutableFile(atPath: c) {
+            if let minor = minorVersion(ofInterpreter: c), minor >= 10 { return c }
+        }
+        return nil
+    }
+
+    static let needPythonMsg =
+        "Anonproxy needs Python 3.10 or newer and none was found.\n\n" +
+        "Install it with:\n    brew install python@3.12\n" +
+        "(or set PYTHON_BIN to an existing one), then press Start again."
+
     /// First-run bootstrap: an isolated venv under ~/.anonproxy/venv with the
     /// project's dependencies, so end users never run pip by hand.
+    /// HARD requirement: a real Python >= 3.10 — on 3.9 the proxy would build
+    /// a venv, "install", then die inside pydantic at serve time. Refuse early
+    /// with instructions instead of pretending.
     func ensureVenv(done: @escaping (Bool, String) -> Void) {
         if venvReady() { done(true, ""); return }
-        let havePython = FileManager.default.isExecutableFile(atPath: pythonBin)
-            || pythonBin == "python3"
-        guard havePython else { done(false, "no python>=3.10 found"); return }
+        guard let base = find310() else {
+            done(false, Self.needPythonMsg)
+            return
+        }
+        _ = base
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             try? FileManager.default.createDirectory(at: self.anonDir,
                                                      withIntermediateDirectories: true)
-            let mk = sh([self.pythonBin, "-m", "venv", self.venvPy
+            let mk = sh(["\(base)", "-m", "venv", self.venvPy
                           .replacingOccurrences(of: "/bin/python", with: "")],
                         cwd: self.home, timeout: 300)
             guard mk.0 == 0 else { done(false, mk.1); return }
+            guard self.minorVersion(ofInterpreter: self.venvPy).map({ $0 >= 10 }) ?? false else {
+                done(false, Self.needPythonMsg)
+                return
+            }
             guard let req = self.requirementsPath() else {
                 done(true, "(no requirements found — skipped pip)")
                 return
@@ -297,7 +349,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func cliSync(_ sub: [String]) -> (Int32, String) {
         // PYTHONPATH pins `import anonproxy` to this repo regardless of cwd
-        let r = sh([pythonBin, "-m", "anonproxy"] + sub, cwd: home,
+        let py = bundledPy ?? pythonBin
+        let r = sh([py, "-m", "anonproxy"] + sub, cwd: home,
                    extraEnv: ["PYTHONPATH": home.path])
         if r.0 != 0 {
             return (r.0, r.1 +
@@ -339,6 +392,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                      "Stop it or change the port in profile '\(name)'.")
             return
         }
+        if bundledPy != nil {
+            startChildNow(name)          // nothing to bootstrap: deps are baked in
+            return
+        }
         if !venvReady() && !setupInProgress {
             setupInProgress = true
             refreshTitle()
@@ -358,6 +415,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         if setupInProgress { return }
+        startChildNow(name)
+    }
+
+    func startChildNow(_ name: String) {
         let logPath = logsDir.appendingPathComponent("anonbar-\(name).log").path
         FileManager.default.createFile(atPath: logPath, contents: nil)
         let logf = FileHandle(forWritingAtPath: logPath)
@@ -365,7 +426,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var childEnv = ProcessInfo.processInfo.environment
         childEnv["PYTHONPATH"] = home.path
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: venvPy)
+        p.executableURL = URL(fileURLWithPath: childPython())
         p.arguments = ["-m", "anonproxy", "up", name]
         p.currentDirectoryURL = home
         p.environment = childEnv
@@ -580,6 +641,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     static func debugRun(_ d: AppDelegate) {
         print("home=\(d.home.path)")
         print("source=\(d.homeSource)")
+        print("runtime=\(d.bundledPy ?? d.pythonBin + " (system; venv bootstrap on first start)")")
         print("python=\(d.pythonBin)")
         print("profiles=\(d.profiles().map { $0.name }.joined(separator: ","))")
         print("selected=\(d.selected)")

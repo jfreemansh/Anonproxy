@@ -86,7 +86,7 @@ def create_app(settings: Settings | None = None,
         yield
         await client.aclose()
 
-    app = FastAPI(title="Anonproxy", version="0.1.1", lifespan=lifespan)
+    app = FastAPI(title="Anonproxy", version="0.1.2", lifespan=lifespan)
     # exposed for tests/introspection: live engagement -> Engine cache
     app.state.engines = engines
 

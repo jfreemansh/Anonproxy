@@ -134,16 +134,15 @@ the host. Pick whichever setup you prefer.
 and open it (unsigned local build: right-click → *Open* the first time, or
 `xattr -cr /Applications/Anonbar.app`). A 🛡️ icon appears in your menu bar.
 
-*2 · One requirement* — any Python ≥ 3.10 on the machine
-(`brew install python@3.12`). The app finds it automatically; on first
-**Start** it builds its own private environment (`~/.anonproxy/venv`) and
-installs everything into it — you never run pip.
+*2 · Requirements* — none. The app embeds its own Python interpreter and
+every dependency (v0.1.2+): no Homebrew, no pip, no network on first run,
+works even on machines without any Python installed.
 
 *3 · Daily loop* —
 
 ```
 🛡️ menu ▸ Engagements ▸ ＋ New engagement…      name it, add scope terms
-🛡️ menu ▸ Start                                  (first start: ~1 min setup)
+🛡️ menu ▸ Start
 🛡️ menu ▸ Copy client env                        paste into your shell:
     export ANTHROPIC_BASE_URL=http://127.0.0.1:8099   # then run claude / your SDK
 🛡️ menu ▸ Open audit dashboard                   watch every redaction live
