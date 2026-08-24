@@ -1,0 +1,27 @@
+name: Bug report
+description: Something redacted wrong, crashed, or leaked
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Include what you expected instead.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`anonproxy --version`, commit sha, or app version"
+  - type: textarea
+    id: verify
+    attributes:
+      label: `anonproxy verify` output
+      description: Run it (add --no-llm if Ollama isn't up) and paste the result.
+    validations:
+      required: true
+  - type: checkboxes
+    attributes:
+      label: Checks
+      options:
+        - label: I ran verify and attached/pasted its output
+        - label: I'm on the latest release or main

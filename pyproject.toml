@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "ruff>=0.6"]
+dev = ["pytest>=7", "ruff>=0.6", "hypothesis>=6"]
 vault-crypto = []                       # deprecated no-op: crypto is now a base dependency
 # Optional contextual-detection backends (enable via ANONPROXY_DETECTORS).
 gliner = ["gliner>=0.2.13"]

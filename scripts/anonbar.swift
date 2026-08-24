@@ -629,6 +629,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    @objc func checkUpdates() {
+        let cur = (Bundle.main.object(forInfoDictionaryKey:
+            "CFBundleShortVersionString") as? String) ?? "0"
+        var req = URLRequest(url: URL(string:
+            "https://api.github.com/repos/jfreemansh/Anonproxy/releases/latest")!)
+        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        URLSession.shared.dataTask(with: req) { data, _, _ in
+            DispatchQueue.main.async {
+                let tag = ((try? JSONSerialization.jsonObject(with: data ?? Data())
+                    as? [String: Any])?["tag_name"] as? String) ?? ""
+                if Self.isNewer(tag, than: cur) {
+                    let a = NSAlert()
+                    a.messageText = "Update available: \(tag)"
+                    a.informativeText = "Running \(cur). Open the releases page?"
+                    a.addButton(withTitle: "Open Releases")
+                    a.addButton(withTitle: "Later")
+                    if a.runModal() == .alertFirstButtonReturn {
+                        NSWorkspace.shared.open(URL(string:
+                            "https://github.com/jfreemansh/Anonproxy/releases/latest")!)
+                    }
+                } else if cur == "0" {
+                    alertBox("Anonbar", "Development build — skipping version compare.")
+                } else {
+                    alertBox("Up to date", "Anonbar \(cur) is the latest release.")
+                }
+            }
+        }.resume()
+    }
+
+    static func isNewer(_ candidate: String, than current: String) -> Bool {
+        let pa = candidate.trimmingCharacters(in: CharacterSet(charactersIn: "v"))
+            .split(separator: ".").map { Int($0) ?? 0 }
+        let pb = current.split(separator: ".").map { Int($0) ?? 0 }
+        for i in 0..<max(pa.count, pb.count) {
+            let x = i < pa.count ? pa[i] : 0
+            let y = i < pb.count ? pb[i] : 0
+            if x != y { return x > y }
+        }
+        return false
+    }
+
     @objc func exportArchive() {
         guard !selected.isEmpty else { return }
         cliAsync(["close", selected]) { rc, out in
