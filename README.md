@@ -188,9 +188,12 @@ env, open `/audit`, run `verify`, and one-click **Export & archive vault…**
 close-out.
 
 ```bash
-scripts/build_anonbar.sh        # → build/anonbar (needs Xcode command line tools)
-build/anonbar &                 # or: ln -sf $PWD/build/anonbar /usr/local/bin/anonbar
+scripts/install_anonbar.sh      # one-time: builds + installs /Applications/Anonbar.app
+open -a Anonbar                 # or Spotlight: ⌘Space → "Anonbar"
 ```
+
+Rebuild/reinstall only when `anonbar.swift` itself changes. For auto-start at
+login: System Settings → General → Login Items → add Anonbar.
 
 It shells out to the same CLI, so profiles created in either place just show
 up in the other. Env overrides: `ANONPROXY_HOME`, `PYTHON_BIN`.
