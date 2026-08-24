@@ -11,6 +11,21 @@
 #
 # Everything else (serve, verify, anon, deanon, ...) passes through to
 # `python3 -m anonproxy`.
+#
+# Self-locating: resolves its own repo through symlinks and pins PYTHONPATH,
+# so it works from any directory and survives moving/renaming the repo.
 set -euo pipefail
+
+SRC="${BASH_SOURCE[0]}"
+while [ -L "$SRC" ]; do
+  DIR="$(cd "$(dirname "$SRC")" && pwd)"
+  SRC="$(readlink "$SRC")"
+  [[ "$SRC" != /* ]] && SRC="$DIR/$SRC"
+done
+ROOT="$(cd "$(dirname "$SRC")/.." && pwd)"
+
+export PYTHONPATH="${ROOT}${PYTHONPATH:+:$PYTHONPATH}"
+PYTHON="${PYTHON_BIN:-python3}"
+
 [ $# -eq 0 ] && set -- up
-exec python3 -m anonproxy "$@"
+exec "$PYTHON" -m anonproxy "$@"

@@ -21,16 +21,25 @@ from .engine import Engine
 
 
 def _load_dotenv(path: str = ".env") -> None:
-    """Load KEY=VALUE pairs from a .env in the cwd without overriding real env."""
-    p = Path(path)
-    if not p.exists():
-        return
-    for line in p.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
+    """Load KEY=VALUE pairs without overriding real env vars.
+
+    Searched in order: ``path`` (the cwd convention), then the repo root
+    next to the installed package — so the CLI picks up your settings from
+    any working directory, and after moving/renaming the repo.
+    """
+    candidates = [Path(path)]
+    pkg_root_env = Path(__file__).resolve().parent.parent / ".env"
+    if pkg_root_env.resolve() != Path(path).resolve():
+        candidates.append(pkg_root_env)
+    for p in candidates:
+        if not p.exists():
             continue
-        key, _, val = line.partition("=")
-        os.environ.setdefault(key.strip(), val.strip())
+        for line in p.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            os.environ.setdefault(key.strip(), val.strip())
 
 
 def main(argv=None) -> int:
