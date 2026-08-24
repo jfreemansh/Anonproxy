@@ -125,16 +125,45 @@ the host. Pick whichever setup you prefer.
 
 **A. macOS app (recommended)**
 
-Download `Anonbar-macos.zip` from the project's
-[Releases](../../releases) page, unzip, drag **Anonbar.app** to
-Applications, and open it (unsigned local build: right-click → *Open* the
-first time, or `xattr -cr /Applications/Anonbar.app`). The 🛡️ icon appears
-in your menu bar.
+> **You do NOT need to clone this repo or run any pip command for this path.**
+> The app ships the entire Anonproxy engine inside itself — this download is
+> the whole product.
 
-Requirements: any Python ≥ 3.10 on the machine (`brew install python@3.12`).
-Nothing else — on first **Start** the app creates its own isolated
-environment (`~/.anonproxy/venv`) and installs its dependencies for you.
-Building from source instead? See
+*1 · Install* — grab `Anonbar-macos.zip` from the project's
+[Releases](../../releases) page, unzip, drag **Anonbar.app** to Applications,
+and open it (unsigned local build: right-click → *Open* the first time, or
+`xattr -cr /Applications/Anonbar.app`). A 🛡️ icon appears in your menu bar.
+
+*2 · One requirement* — any Python ≥ 3.10 on the machine
+(`brew install python@3.12`). The app finds it automatically; on first
+**Start** it builds its own private environment (`~/.anonproxy/venv`) and
+installs everything into it — you never run pip.
+
+*3 · Daily loop* —
+
+```
+🛡️ menu ▸ Engagements ▸ ＋ New engagement…      name it, add scope terms
+🛡️ menu ▸ Start                                  (first start: ~1 min setup)
+🛡️ menu ▸ Copy client env                        paste into your shell:
+    export ANTHROPIC_BASE_URL=http://127.0.0.1:8099   # then run claude / your SDK
+🛡️ menu ▸ Open audit dashboard                   watch every redaction live
+🛡️ menu ▸ Export & archive vault…                at close-out: evidence CSV+JSON,
+                                                 vault wiped
+```
+
+Switching clients = pick another engagement from the same menu (vaults stay
+isolated per client).
+
+*4 · Recommended extra* — install [Ollama](https://ollama.com) and pull a
+model (`ollama pull qwen3:4b`); detection then also catches bare hostnames,
+org names and unlabeled passwords, not just regex-shaped secrets. Without it
+everything still works — regex floor only.
+
+*5 · Optional* — want the terminal CLI too (`anonproxy …`, `scripts/anon`
+profiles)? That's what options **B**/**C** below are for; completely separate
+from the app, sharing the same engagements.
+
+Building the app yourself instead of downloading?
 [Fast workflow](#fast-workflow-profiles-scripts_anon-macos-menubar).
 
 **B. Guided wizard**

@@ -2,6 +2,10 @@
 
 A no-jargon guide. If you can copy-paste three commands, you can run this.
 
+> **Using the macOS menu-bar app?** You don't need this page — the app bundles
+> everything. See README → Quick start **A** for its 4-step daily loop. This
+> guide is for the terminal/CLI path.
+
 ## What it does (30 seconds)
 
 When you use a cloud AI (Claude, ChatGPT) on a pentest, your prompts can contain
