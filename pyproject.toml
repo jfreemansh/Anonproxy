@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7"]
+dev = ["pytest>=7", "ruff>=0.6"]
 vault-crypto = []                       # deprecated no-op: crypto is now a base dependency
 # Optional contextual-detection backends (enable via ANONPROXY_DETECTORS).
 gliner = ["gliner>=0.2.13"]
@@ -26,6 +26,13 @@ piiranha = ["transformers>=4.40", "torch>=2.2"]
 openai-pii = ["transformers>=4.40", "torch>=2.2"]
 # anonymizer-slm needs no extra Python deps — it runs via Ollama.
 all = ["gliner>=0.2.13", "gliner2>=0.1", "transformers>=4.40", "torch>=2.2"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B"]
 
 [project.scripts]
 anonproxy = "anonproxy.cli:main"

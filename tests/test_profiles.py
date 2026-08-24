@@ -6,8 +6,13 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from anonproxy.config import Settings
-from anonproxy.profiles import (Profile, ProfileStore, client_env_lines,
-                                close_engagement, sanitize_name)
+from anonproxy.profiles import (
+    Profile,
+    ProfileStore,
+    client_env_lines,
+    close_engagement,
+    sanitize_name,
+)
 
 
 def _store(tmp_path):

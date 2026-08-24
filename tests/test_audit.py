@@ -28,7 +28,10 @@ def test_audit_page_served():
 
 
 def test_audit_disabled():
-    s = Settings(); s.ephemeral = True; s.llm_enabled = False; s.audit_enabled = False
+    s = Settings()
+    s.ephemeral = True
+    s.llm_enabled = False
+    s.audit_enabled = False
     tc = TestClient(create_app(s))
     assert tc.get("/audit").status_code == 404
 
@@ -73,7 +76,8 @@ def test_stats_reports_detector_failures():
 
 
 def test_floor_detector_failure_is_counted():
-    from anonproxy import Engine, Settings as EngineSettings
+    from anonproxy import Engine
+    from anonproxy import Settings as EngineSettings
     from anonproxy.detectors import RegexDetector
 
     s = EngineSettings()

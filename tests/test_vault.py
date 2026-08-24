@@ -6,9 +6,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 
+from anonproxy import surrogates
 from anonproxy.config import Settings
 from anonproxy.vault import Vault
-from anonproxy import surrogates
 
 
 def test_collision_exhaustion_logs_and_raises(monkeypatch, caplog):

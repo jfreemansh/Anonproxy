@@ -19,9 +19,9 @@ from typing import Optional
 from urllib.parse import unquote
 
 from .config import Settings
+from .detectors import LLMDetector, build_detectors
+from .restorer import StreamRestorer, TolerantRestorer
 from .vault import Vault
-from .detectors import Match, LLMDetector, build_detectors
-from .restorer import TolerantRestorer, StreamRestorer
 
 log = logging.getLogger("anonproxy.engine")
 

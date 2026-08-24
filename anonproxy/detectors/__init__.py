@@ -43,8 +43,8 @@ def chunk_text(text: str, size: int = 1500, overlap: int = 200) -> list[str]:
     return [text[i:i + size] for i in range(0, len(text), step)]
 
 
-from .regex_detector import detect as regex_detect  # noqa: E402
 from .llm_detector import LLMDetector  # noqa: E402
+from .regex_detector import detect as regex_detect  # noqa: E402
 
 
 class RegexDetector:

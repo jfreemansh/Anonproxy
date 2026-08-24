@@ -5,8 +5,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from anonproxy.config import Settings
 from anonproxy import verify
+from anonproxy.config import Settings
 
 
 def test_regex_only_no_leaks_and_roundtrip():

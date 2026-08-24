@@ -27,7 +27,7 @@ def test_lm_nt_hash_surrogate_is_engagement_keyed():
     assert a != b                                   # not linkable across clients
     assert a == surrogates.generate("HASH", lm_nt, engagement="client-a")  # deterministic within one
     assert a.count(":") == lm_nt.count(":")         # LM:NT structure kept
-    for part_o, part_s in zip(lm_nt.split(":"), a.split(":")):
+    for part_o, part_s in zip(lm_nt.split(":"), a.split(":"), strict=True):
         assert len(part_o) == len(part_s)
         assert re.fullmatch(r"[0-9a-f]+", part_s)
 

@@ -4,8 +4,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from anonproxy.config import Settings
 from anonproxy import Engine
+from anonproxy.config import Settings
 from anonproxy.detectors.regex_detector import _luhn_ok, detect
 
 

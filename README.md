@@ -1,5 +1,7 @@
 # Anonproxy
 
+[![CI](https://github.com/jfreemansh/Anonproxy/actions/workflows/ci.yml/badge.svg)](https://github.com/jfreemansh/Anonproxy/actions/workflows/ci.yml)
+
 **A reversible anonymization layer for sending pentest data to LLMs — built to be
 more reliable than match/replace.**
 
@@ -566,7 +568,9 @@ assumes a single proxy process; the vault's in-memory cache has no cross-process
 invalidation, so don't run it behind multiple workers (`serve` always starts
 one). It is not a substitute for reading what your NDA and engagement contract
 allow before using any cloud AI on client data. Verify coverage per engagement
-with the `/audit` page, `export`, and the test suite.
+with the `/audit` page, `export`, and the test suite. A fuller accounting of
+assets, trust boundaries and residual risks lives in [THREAT-MODEL.md](THREAT-MODEL.md);
+security issues go to [SECURITY.md](SECURITY.md).
 
 ## Releases & CI
 

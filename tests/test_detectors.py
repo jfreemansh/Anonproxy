@@ -4,9 +4,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from anonproxy import Engine
 from anonproxy.config import Settings
 from anonproxy.detectors import build_detectors
-from anonproxy import Engine
 
 
 def _settings(detectors):

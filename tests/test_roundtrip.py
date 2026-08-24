@@ -119,7 +119,7 @@ def test_same_entity_different_casing_roundtrips_exactly():
 def test_format_preserving_shapes():
     engine = fresh_engine()
     import ipaddress
-    ip_s = engine.vault  # ensure created
+    _ip_s = engine.vault  # ensure created
     engine.anonymize("10.20.0.10 and hash 8846f7eaee8fb117ad06bdd830b7586c")
     ip_sur = engine.vault.surrogate_for("10.20.0.10")
     ipaddress.ip_address(ip_sur)                      # valid IP

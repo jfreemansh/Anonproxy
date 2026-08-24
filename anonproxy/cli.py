@@ -115,9 +115,15 @@ def main(argv=None) -> int:
         return wizard_run()
 
     # --- profiles: pure file management, no Settings needed ------------------
-    from .profiles import (Profile, ProfileStore, client_env_lines,
-                           close_engagement, copy_to_clipboard, open_in_editor,
-                           sanitize_name)
+    from .profiles import (
+        Profile,
+        ProfileStore,
+        client_env_lines,
+        close_engagement,
+        copy_to_clipboard,
+        open_in_editor,
+        sanitize_name,
+    )
     store = ProfileStore()
 
     def _resolve_profile(name: str | None) -> Profile:
@@ -261,8 +267,6 @@ def main(argv=None) -> int:
         return 0
 
     if args.cmd == "serve":
-        import uvicorn
-        from .proxy.app import create_app
         if args.host:
             settings.host = args.host
         if args.port:
@@ -294,6 +298,7 @@ def _print_banner(settings) -> None:
 
 def _serve(settings) -> None:
     import uvicorn
+
     from .proxy.app import create_app
     uvicorn.run(create_app(settings), host=settings.host,
                 port=settings.port, log_level="info")
@@ -322,7 +327,7 @@ def _spawn_daemon(child_argv: list[str], settings) -> int:
     print(f"started pid {proc.pid} (engagement={settings.engagement_id}, "
           f"port={settings.port})")
     print(f"  logs: {log_path}")
-    print(f"  stop: anonproxy stop")
+    print("  stop: anonproxy stop")
     return 0
 
 

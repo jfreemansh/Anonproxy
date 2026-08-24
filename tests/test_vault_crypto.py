@@ -2,14 +2,12 @@
 import os
 import sys
 
-import sys
-
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from anonproxy.config import Settings          # noqa: E402
-from anonproxy import Engine                   # noqa: E402
+from anonproxy import Engine  # noqa: E402
+from anonproxy.config import Settings  # noqa: E402
 from anonproxy.profiles import close_engagement  # noqa: E402
 
 
@@ -54,7 +52,7 @@ def test_wrong_passphrase_fails_clean(tmp_path):
 def test_unencrypted_mode_unchanged(tmp_path):
     s = _settings(tmp_path)
     eng = Engine(settings=s)
-    out = eng.anonymize("10.20.0.10")
+    eng.anonymize("10.20.0.10")
     assert os.path.exists(str(s.vault_path()))
     assert not os.path.exists(str(s.vault_path()) + ".enc")
     assert eng.stats()["encrypted"] is False

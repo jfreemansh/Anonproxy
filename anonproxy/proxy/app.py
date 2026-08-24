@@ -28,13 +28,13 @@ import logging
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, Request, Response, HTTPException
-from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
+from .. import audit
 from ..config import Settings
 from ..engine import Engine
-from .. import audit
-from . import transform, streaming
+from . import streaming, transform
 
 log = logging.getLogger("anonproxy.app")
 
@@ -189,7 +189,7 @@ def create_app(settings: Settings | None = None,
                         status_code=502,
                         detail="anonproxy strict mode: request body is not valid "
                                "JSON, refusing to forward it unanonymized",
-                    )
+                    ) from None
                 log.warning("request body is not valid JSON (%d bytes) — "
                             "forwarding unanonymized", len(raw))
 

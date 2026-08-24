@@ -30,10 +30,12 @@ import secrets
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Optional
 
-from .config import Settings
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
 from . import surrogates
+from .config import Settings
 
 log = logging.getLogger("anonproxy.vault")
 
@@ -41,8 +43,6 @@ log = logging.getLogger("anonproxy.vault")
 # Whole-file AES-GCM envelope next to where the plaintext sqlite would live.
 # The DB runs from a private temp file while the process is up; every commit
 # re-seals the envelope. Format: ANPENC1 | salt(16) | nonce(12) | ciphertext.
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
 _ENC_MAGIC = b"ANPENC1"
 _SALT_LEN = 16
 _NONCE_LEN = 12
@@ -164,7 +164,7 @@ class Vault:
         self._conn.commit()
 
     def _load_cache(self) -> None:
-        for original, norm, surrogate in self._conn.execute(
+        for original, _norm, surrogate in self._conn.execute(
             "SELECT original, norm, surrogate FROM mappings"
         ):
             self._fwd[original] = surrogate

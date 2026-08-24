@@ -15,8 +15,8 @@ Public API:
     back = eng.deanonymize(safe)          # surrogate -> real (tolerant)
 """
 
-from .engine import Engine
 from .config import Settings
+from .engine import Engine
 
 __all__ = ["Engine", "Settings"]
 __version__ = "0.1.0"

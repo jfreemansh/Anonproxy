@@ -10,13 +10,12 @@ import os
 import sys
 
 import httpx
-import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from anonproxy.config import Settings
-from anonproxy.proxy.app import create_app, _strip_v1
+from anonproxy.proxy.app import _strip_v1, create_app
 
 CAPTURED = {}
 
@@ -56,7 +55,9 @@ def mock_handler(request: httpx.Request) -> httpx.Response:
     echoed = "Analysis of " + " ".join(f"**{t.upper()}**" for t in tokens)
 
     if body.get("stream"):
-        chunks = [b'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n']
+        start_evt = (b'event: content_block_start\ndata: {"type":"content_block_start",'
+                     b'"index":0,"content_block":{"type":"text","text":""}}\n\n')
+        chunks = [start_evt]
         for i in range(0, len(echoed), 4):   # tiny pieces -> surrogates split across deltas
             evt = {"type": "content_block_delta", "index": 0,
                    "delta": {"type": "text_delta", "text": echoed[i:i + 4]}}

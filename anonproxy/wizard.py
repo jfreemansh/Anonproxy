@@ -218,7 +218,6 @@ def run() -> int:
         for line in lines:
             k, _, v = line.partition("=")
             os.environ[k] = v
-        from .config import Settings
         from .cli import main as cli_main
         # re-resolve settings from the env we just set
         return cli_main(["serve"])
