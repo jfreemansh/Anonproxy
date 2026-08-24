@@ -51,8 +51,15 @@ _rule("TOKEN",
 # value in a Set-Cookie response header or a Cookie request header, whatever
 # it's named. Over-redacting a boring cookie is free; missing a live session
 # token is not.
-_rule("TOKEN", r"(?im)^set-cookie:\s*[\w.-]+=([^;\r\n]{4,})", group=1)
-_rule("TOKEN", r"(?im)(?:^cookie:\s*|;\s*)[\w.-]+=([^;\r\n]{4,})", group=1)
+# Value classes exclude backslash and quotes: bodies arrive JSON-serialized,
+# where \r\n are literal backslash sequences — without the backslash bound a
+# cookie value swallows subsequent headers (and whole JSON records) as one
+# giant token. Real cookie values never contain raw backslashes.
+_rule("TOKEN", r"(?im)^set-cookie:\s*[\w.-]+=([^;\r\n\\']{4,})", group=1)
+_rule("TOKEN",
+      r"(?im)(?:^cookie:\s*|;\s*)"
+      r"(?!(?:path|domain|secure|httponly|samesite|expires|max-age|priority)\s*=)"
+      r"[\w.-]+=([^;\r\n\\']{4,})", group=1)
 
 # --- Hashes ----------------------------------------------------------------
 # LM:NT combined (pwdump / secretsdump format) — match before bare md5/sha
@@ -110,7 +117,17 @@ _rule(
 )
 
 # --- Windows domain accounts ----------------------------------------------
-_rule("USERNAME", r"\b[A-Za-z0-9.-]{2,30}\\[A-Za-z0-9._-]{2,30}\b")   # CORP\jsmith
+# The backslash must not open an escape sequence: bodies arrive JSON-
+# serialized, so \n / \r / \" are line breaks and quotes, not CORP\user.
+_rule("USERNAME", r"\b[A-Za-z0-9.-]{2,30}\\(?![nrt\"'\\])[A-Za-z0-9._-]{2,30}\b")   # CORP\jsmith
+
+# Labeled usernames: "username":"nickkilla", log=nickkilla&, user=jsmith —
+# the label is right there, no model needed. Requires a leading letter so
+# ids and booleans (user=1, user=true) don't become "usernames".
+_rule("USERNAME",
+      r"(?i)\b(?:username|user[_-]?name|screen[_-]?name|login|logname|log|user)"
+      r"\"?\]?\s*[=:]\s*\"?(?!(?:true|false|null|none)\b)"
+      r"([A-Za-z][A-Za-z0-9._@-]{2,31})", group=1)
 
 # --- Credentials in labeled contexts (password=..., pass: ...) -------------
 # The value stops at whitespace OR `&` — without the `&` bound, a value inside
@@ -119,7 +136,7 @@ _rule("USERNAME", r"\b[A-Za-z0-9.-]{2,30}\\[A-Za-z0-9._-]{2,30}\b")   # CORP\jsm
 # else matched further down and gets silently dropped as "overlapping".
 _rule("CREDENTIAL",
       r"(?i)(?:password|passwd|pwd|pass|secret|api[_-]?key|token)\s*[:=]\s*"
-      r"([^\s&]{6,})", group=1)
+      r"([^\s&\\']{6,})", group=1)
 
 # Payment card numbers: 13–19 digits, optionally space/dash grouped. Validated
 # with the Luhn checksum to keep false positives near zero (so we don't anonymize
