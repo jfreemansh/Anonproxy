@@ -88,3 +88,18 @@ case). Fixed by computing every replacement value first, then doing exactly
 one bulk `withRemovedHeader("Set-Cookie")` + one bulk `withAddedHeaders(...)`.
 Re-verified against a real two-`Set-Cookie` response — both now survive
 independently, each restoring correctly.
+
+## Context menu: Copy anonymized to clipboard
+
+Right-click any request/response (Proxy history, Repeater, an editor) and
+choose **Anonproxy: Copy anonymized to clipboard** — the full HTTP text
+lands on your clipboard with real values replaced by engagement
+surrogates, ready to paste into claude.ai, ChatGPT, a ticket, wherever.
+Fail-closed: if the engine is unreachable, nothing is copied.
+
+## Engagement: follows the engine
+
+By default the extension asks the engine which engagement it is serving
+(`/anonproxy/health`) and uses that — so Burp always shares the vault the
+menubar started, whatever its name. An explicit override still wins:
+`-Danonproxy.engagement=acme-2026` or `ENGAGEMENT_ID=acme-2026`.

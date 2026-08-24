@@ -7,7 +7,13 @@ import burp.api.montoya.http.message.HttpHeader;
 import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.http.message.responses.HttpResponse;
 import burp.api.montoya.logging.Logging;
+import burp.api.montoya.ui.contextmenu.ContextMenuEvent;
+import burp.api.montoya.ui.contextmenu.ContextMenuItemsProvider;
 
+import javax.swing.JMenuItem;
+import java.awt.Component;
+import java.awt.Toolkit;
+import java.awt.datatransfer.StringSelection;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpResponse.BodyHandlers;
@@ -35,7 +41,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * literal-string only: they miss anything they weren't pre-seeded with and can't
  * restore a surrogate the model reformatted.
  */
-public class AnonproxyExtension implements BurpExtension, HttpHandler {
+public class AnonproxyExtension implements BurpExtension, HttpHandler, ContextMenuItemsProvider {
 
     // Where the Python engine API listens (python -m anonproxy serve).
     // Precedence: JVM system property > environment variable > default.
@@ -51,10 +57,15 @@ public class AnonproxyExtension implements BurpExtension, HttpHandler {
 
     private static final String ENGINE = cfg(
             "anonproxy.engine", "ANONPROXY_ENGINE", "http://127.0.0.1:8099");
-    private static final String ENGAGEMENT = cfg(
-            "anonproxy.engagement", "ENGAGEMENT_ID", "default");
     private static final String TOKEN = cfg(
             "anonproxy.token", "ANONPROXY_API_TOKEN", "");
+
+    // Engagement resolution: an explicit setting (system property / env) wins;
+    // otherwise the extension FOLLOWS THE ENGINE — /anonproxy/health reports
+    // the engagement the menubar started, so Burp always shares that vault
+    // instead of silently writing to "default" while the engine runs
+    // "acme-2026". "default" remains the last-resort fallback.
+    private String engagement;
 
     private MontoyaApi api;
     private Logging log;
@@ -75,7 +86,48 @@ public class AnonproxyExtension implements BurpExtension, HttpHandler {
         this.log = api.logging();
         api.extension().setName("Anonproxy");
         api.http().registerHttpHandler(this);
-        log.logToOutput("Anonproxy loaded. Engine=" + ENGINE + " engagement=" + ENGAGEMENT);
+        api.userInterface().registerContextMenuItemsProvider(this);
+        this.engagement = resolveEngagement();
+        log.logToOutput("Anonproxy loaded. Engine=" + ENGINE + " engagement=" + engagement);
+    }
+
+    private String resolveEngagement() {
+        String explicit = cfg("anonproxy.engagement", "ENGAGEMENT_ID", "");
+        if (!explicit.isEmpty()) {
+            log.logToOutput("engagement " + explicit + " (explicit override)");
+            return explicit;
+        }
+        try {
+            var req = java.net.http.HttpRequest.newBuilder()
+                    .uri(URI.create(ENGINE + "/anonproxy/health"))
+                    .timeout(Duration.ofSeconds(3))
+                    .GET().build();
+            var resp = http.send(req, BodyHandlers.ofString());
+            String body = resp.body();
+            if (resp.statusCode() == 200 && body != null) {
+                String eng = extractEngagement(body);
+                if (eng != null && !eng.isEmpty()) {
+                    log.logToOutput("engagement " + eng + " (follows the engine)");
+                    return eng;
+                }
+            }
+            log.logToError("engine did not report an engagement (HTTP "
+                    + resp.statusCode() + ") — falling back to 'default'");
+        } catch (Exception e) {
+            log.logToError("engine unreachable while resolving engagement ("
+                    + e.getMessage() + ") — falling back to 'default'");
+        }
+        return "default";
+    }
+
+    /** Pull "engagement":"..." out of the health payload without a JSON dep. */
+    private static String extractEngagement(String body) {
+        int k = body.indexOf("\"engagement\"");
+        if (k < 0) return null;
+        int colon = body.indexOf(':', k);
+        int q1 = body.indexOf('"', colon);
+        int q2 = body.indexOf('"', q1 + 1);
+        return (q1 >= 0 && q2 > q1) ? body.substring(q1 + 1, q2) : null;
     }
 
     @Override
@@ -175,7 +227,7 @@ public class AnonproxyExtension implements BurpExtension, HttpHandler {
         try {
             String payload = "{"
                     + "\"text\":" + jsonString(text) + ","
-                    + "\"engagement\":" + jsonString(ENGAGEMENT) + ","
+                    + "\"engagement\":" + jsonString(engagement) + ","
                     + "\"is_tool_output\":" + isToolOutput
                     + "}";
             var builder = java.net.http.HttpRequest.newBuilder()
@@ -248,5 +300,65 @@ public class AnonproxyExtension implements BurpExtension, HttpHandler {
             }
         }
         return out.toString();
+    }
+
+    // --- context menu: copy anonymized to clipboard --------------------------
+    // The Burp-MCP workflow is already covered by the proxy itself (tool
+    // results flowing through :8099 get anonymized there). This menu covers
+    // everything else: select any request/response in Proxy history, Repeater
+    // or an editor, right-click, and the full HTTP text lands on the
+    // clipboard with real values replaced by engagement surrogates — paste
+    // into claude.ai, ChatGPT, a ticket, wherever.
+
+    @Override
+    public List<Component> provideMenuItems(ContextMenuEvent event) {
+        boolean hasTargets = !event.selectedRequestResponses().isEmpty()
+                || event.messageEditorRequestResponse().isPresent();
+        if (!hasTargets) {
+            return List.of();
+        }
+        JMenuItem item = new JMenuItem("Anonproxy: Copy anonymized to clipboard");
+        item.addActionListener(e -> copyAnonymized(event));
+        return List.of(item);
+    }
+
+    private void copyAnonymized(ContextMenuEvent event) {
+        int items = 0;
+        if (event.messageEditorRequestResponse().isPresent()) {
+            var mer = event.messageEditorRequestResponse().get();
+            if (mer.requestResponse().request() != null) {
+                copyAnonymize(mer.requestResponse().request().toString());
+                items++;
+            }
+            if (mer.requestResponse().response() != null) {
+                copyAnonymize(mer.requestResponse().response().toString());
+                items++;
+            }
+        }
+        for (var rr : event.selectedRequestResponses()) {
+            copyAnonymize(rr.request().toString());
+            if (rr.response() != null) {
+                copyAnonymize(rr.response().toString());
+            }
+            items++;
+        }
+        log.logToOutput("copied " + items + " anonymized item(s) to clipboard "
+                + "(engagement=" + engagement + ")");
+    }
+
+    private void copyAnonymize(String httpText) {
+        String anon = call("/anonproxy/anonymize", httpText, true);
+        String result;
+        if (anon != null) {
+            result = anon;
+        } else {
+            // engine unreachable: fail CLOSED — never place unredacted
+            // traffic on a clipboard under an "anonymized" label.
+            log.logToError("engine unreachable — clipboard NOT populated with "
+                    + "request/response content");
+            result = "[ANONPROXY: engine unreachable — nothing copied]";
+        }
+        var selection = new StringSelection(result);
+        Toolkit.getDefaultToolkit().getSystemClipboard().setContents(selection, null);
     }
 }
