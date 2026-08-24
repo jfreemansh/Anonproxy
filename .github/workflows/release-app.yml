@@ -62,3 +62,4 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: rel/*
+          draft: false          # explicit: some token configs left these as drafts

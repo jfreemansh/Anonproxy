@@ -470,6 +470,14 @@ export ANONPROXY_VAULT_PASSPHRASE="pick something long"   # or _KEYFILE=/path/to
 python -m anonproxy serve --engagement acme-2026
 ```
 
+**Recommended one-time setup** — generate a random machine key and every
+engagement (CLI *and* menubar app) is encrypted automatically from then on,
+with nothing to type per session:
+
+```bash
+mkdir -p ~/.anonproxy && openssl rand -base64 32 > ~/.anonproxy/vault.key && chmod 600 ~/.anonproxy/vault.key
+```
+
 What you get: the vault becomes a single AES-GCM-encrypted envelope
 (`<engagement>.sqlite.enc`); while running, the plaintext exists only in the
 process memory and a private temp file that is deleted on exit. Re-opening

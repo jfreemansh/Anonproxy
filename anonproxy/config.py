@@ -149,6 +149,15 @@ class Settings:
     strict_mode: bool = field(default_factory=lambda: _env_bool("ANONPROXY_STRICT", False))
 
     def __post_init__(self):
+        # Zero-friction encrypted vaults: if a machine-wide keyfile exists and
+        # nothing more specific is configured, use it. One-time setup
+        # (openssl rand > ~/.anonproxy/vault.key) then every engagement — CLI
+        # or menubar — is encrypted automatically.
+        if not self.vault_passphrase and not self.vault_keyfile:
+            default_key = Path.home() / ".anonproxy" / "vault.key"
+            if default_key.exists():
+                self.vault_keyfile = str(default_key)
+
         # Normalise the Ollama endpoint. People commonly export
         # OLLAMA_HOST=0.0.0.0:11434 to make the *server* listen on all
         # interfaces, but a *client* must dial a real address and needs a

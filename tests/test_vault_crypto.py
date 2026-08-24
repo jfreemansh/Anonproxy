@@ -64,3 +64,27 @@ def test_close_out_removes_envelope(tmp_path):
     res = close_engagement(s, exports_dir=tmp_path / "ex")
     assert res["count"] >= 1 and res["vault_removed"] is True
     assert not os.path.exists(str(s.vault_path()) + ".enc")
+
+
+def test_default_keyfile_autodetected(tmp_path, monkeypatch):
+    import pathlib
+    fake_home = tmp_path / "home"
+    (fake_home / ".anonproxy").mkdir(parents=True)
+    monkeypatch.setattr(pathlib.Path, "home", lambda: fake_home)
+    keyfile = fake_home / ".anonproxy" / "vault.key"
+    keyfile.write_text("machine-key\n")
+    keyfile.chmod(0o600)
+
+    s = _settings(tmp_path)                      # no explicit key config at all
+    assert s.vault_keyfile == str(keyfile)       # config auto-picks it up
+    eng = Engine(settings=s)
+    eng.anonymize("10.20.0.10")
+    assert os.path.exists(str(s.vault_path()) + ".enc")
+
+
+def test_missing_key_with_existing_envelope_fails_clean(tmp_path):
+    s = _settings(tmp_path, vault_passphrase="k")
+    Engine(settings=s).anonymize("10.20.0.10")
+    s2 = _settings(tmp_path)                     # key lost / not configured
+    with pytest.raises(RuntimeError, match="ENCRYPTED vault"):
+        Engine(settings=s2)

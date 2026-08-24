@@ -88,6 +88,11 @@ class Vault:
             self._conn = sqlite3.connect(str(self._tmp_path), check_same_thread=False)
         elif settings.ephemeral:
             self._conn = sqlite3.connect(":memory:", check_same_thread=False)
+        elif os.path.exists(str(settings.vault_path()) + ".enc"):
+            raise RuntimeError(
+                f"engagement {settings.engagement_id!r} has an ENCRYPTED vault "
+                f"but no key is configured — set ANONPROXY_VAULT_PASSPHRASE or "
+                f"restore ~/.anonproxy/vault.key")
         else:
             self._conn = sqlite3.connect(str(settings.vault_path()), check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
