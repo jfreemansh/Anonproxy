@@ -481,8 +481,9 @@ mkdir -p ~/.anonproxy && openssl rand -base64 32 > ~/.anonproxy/vault.key && chm
 What you get: the vault becomes a single AES-GCM-encrypted envelope
 (`<engagement>.sqlite.enc`); while running, the plaintext exists only in the
 process memory and a private temp file that is deleted on exit. Re-opening
-with the same passphrase restores everything automatically; a wrong one fails
-immediately with a clear error instead of corrupting data. An existing
+with the same passphrase restores everything automatically; a wrong passphrase
+— or a lost keyfile — fails immediately with a clear error instead of
+corrupting or silently recreating the vault. An existing
 plaintext vault is adopted (encrypted) the next time something is written,
 and `close-out` removes the envelope along with everything else. The `/audit`
 stats bar shows a 🔒 pill whenever the live vault is encrypted.
@@ -531,7 +532,7 @@ rather than staying green while quietly returning zero detections.
 ## Tests
 
 ```bash
-python3 -m pytest -q                    # 124 tests: round-trip, streaming, proxy, audit, verify, detectors, tool-calls, vault, profiles, llm_detector, webapp, scope, config, polish
+python3 -m pytest -q                    # 126 tests: round-trip, streaming, proxy, audit, verify, detectors, tool-calls, vault, profiles, llm_detector, webapp, scope, config, polish
 python3 scripts/benchmark_roundtrip.py  # naive vs tolerant pass-rate table
 ```
 
