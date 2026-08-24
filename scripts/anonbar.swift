@@ -112,15 +112,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     let menu = NSMenu()
 
-    // repo root: compile-time source path …/repo/scripts/anonbar.swift
-    lazy var home: URL = {
-        if let e = ProcessInfo.processInfo.environment["ANONPROXY_HOME"] {
-            return URL(fileURLWithPath: e, isDirectory: true)
+    // repo root resolution — survives the repo being MOVED anywhere:
+    //   1. $ANONPROXY_HOME          (explicit override)
+    //   2. walk up from this binary (works whenever the app lives in the repo)
+    //   3. ~/.anonproxy/home        (pointer file written by installer / picker)
+    //   4. compile-time source path (last resort)
+    //   5. ask once via folder picker, then persist the choice
+    lazy var anonDir: URL =
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".anonproxy")
+    lazy var home: URL = resolveHome()
+    lazy var profilesDir: URL = anonDir.appendingPathComponent("profiles")
+    lazy var logsDir: URL = anonDir.appendingPathComponent("logs")
+
+    func looksLikeRepo(_ u: URL) -> Bool {
+        FileManager.default.fileExists(
+            atPath: u.appendingPathComponent("anonproxy/__init__.py").path)
+    }
+
+    func resolveHome() -> URL {
+        func valid(_ s: String) -> URL? {
+            let std = URL(fileURLWithPath: s, isDirectory: true).standardized
+            return looksLikeRepo(std) ? std : nil
         }
-        return URL(fileURLWithPath: #filePath)
+        if let e = ProcessInfo.processInfo.environment["ANONPROXY_HOME"], let u = valid(e) {
+            return u
+        }
+        if let exe = Bundle.main.executableURL {
+            var dir = exe.deletingLastPathComponent().standardized
+            while dir.path != "/" && dir.path != "." {
+                if let u = valid(dir.path) { return u }
+                dir.deleteLastPathComponent()
+            }
+        }
+        let ptr = anonDir.appendingPathComponent("home")
+        if let raw = try? String(contentsOf: ptr, encoding: .utf8) {
+            let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !s.isEmpty, let u = valid(s) { return u }
+        }
+        if let u = valid(URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()      // scripts/
             .deletingLastPathComponent()      // repo/
-    }()
+            .path) {
+            return u
+        }
+        let panel = NSOpenPanel()
+        panel.message = "Where is your Anonproxy repo? (folder containing 'anonproxy/')"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        if panel.runModal() == .OK, let u = panel.url, looksLikeRepo(u) {
+            try? FileManager.default.createDirectory(at: anonDir,
+                                                     withIntermediateDirectories: true)
+            try? u.path.write(to: ptr, atomically: true, encoding: .utf8)
+            return u
+        }
+        return URL(fileURLWithPath: "/nonexistent-anonproxy-home")
+    }
     // GUI-launched apps get a bare PATH (no pyenv/homebrew shims), so hunt for
     // a real interpreter ourselves; require >= 3.10 like the project does.
     lazy var pythonBin: String = {
@@ -143,10 +189,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         return "python3"   // last resort: PATH lookup
     }()
-    lazy var anonDir: URL =
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".anonproxy")
-    lazy var profilesDir: URL = anonDir.appendingPathComponent("profiles")
-    lazy var logsDir: URL = anonDir.appendingPathComponent("logs")
 
     var proc: Process?
     var childProfile: String?

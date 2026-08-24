@@ -8,7 +8,8 @@
 # changes. Optional: System Settings → General → Login Items → add Anonbar
 # to auto-start it at login.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 
 ./scripts/build_anonbar.sh >/dev/null
 
@@ -39,6 +40,9 @@ DEST="/Applications"
 if ! [ -w "/Applications" ]; then DEST="$HOME/Applications"; mkdir -p "$DEST"; fi
 rm -rf "$DEST/Anonbar.app"
 cp -R "$APP" "$DEST/"
+
+mkdir -p "$HOME/.anonproxy"
+printf '%s\n' "$ROOT" > "$HOME/.anonproxy/home"   # app finds the repo even after you move it (rerun to re-point)
 
 echo "installed: $DEST/Anonbar.app"
 echo "launch:    open -a Anonbar   (or Spotlight: ⌘Space → \"Anonbar\")"
