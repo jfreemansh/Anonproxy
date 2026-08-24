@@ -13,8 +13,8 @@ jobs:
       # foreign-arch deps arrive as prebuilt wheels (no Intel runner needed).
       matrix:
         include:
-          - { os: macos-14, arch: arm64,  pbsarch: aarch64-apple-darwin }
-          - { os: macos-14, arch: x86_64, pbsarch: x86_64-apple-darwin }
+          - { os: macos-14, arch: arm64,  pbsarch: aarch64-apple-darwin, verify_exec: true }
+          - { os: macos-14, arch: x86_64, pbsarch: x86_64-apple-darwin, verify_exec: false }
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
@@ -36,6 +36,23 @@ jobs:
         env:
           RUNTIME_DIR: /tmp/pbs/python
 
+      - name: Verify assembled bundle structure
+        run: |
+          APP="$(ls -d build/Anonbar*.app | head -1)"
+          test -x "$APP/Contents/MacOS/anonbar"
+          test -f "$APP/Contents/Resources/anonproxy/__init__.py"
+          test -f "$APP/Contents/Resources/requirements.txt"
+          grep -q cryptography "$APP/Contents/Resources/requirements.txt"
+          test -x "$APP/Contents/Frameworks/python/bin/python3"
+          # arm64 runner executes the bundled interpreter directly;
+          # x86_64 bundle gets structural checks (its .so files are foreign here)
+          if [ "${{ matrix.verify_exec }}" = "true" ]; then
+            PYTHONPATH="$APP/Contents/Resources" \
+              "$APP/Contents/Frameworks/python/bin/python3" \
+              -c "import fastapi, uvicorn, httpx, cryptography; from anonproxy.vault import AESGCM"
+            echo "embedded runtime imports OK"
+          fi
+
       - name: Zip + checksum
         run: |
           # 'x86_64' alone gets misread as Windows; spell out macOS + Intel
@@ -50,15 +67,39 @@ jobs:
           name: ${{ env.ZIPNAME }}
           path: build/Anonbar-*
 
+  burp-extension:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: "17"}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: "8.10.2"}
+      - name: Build extension jar
+        run: |
+          cd burp
+          gradle --no-daemon jar
+          mkdir -p ../rel
+          cp build/libs/anonproxy-burp-*.jar ../rel/anonproxy-burp.jar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anonproxy-burp-jar
+          path: rel/anonproxy-burp.jar
+
   release:
+    needs: [build, burp-extension]
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
-        with: { pattern: "Anonbar-*", merge-multiple: true, path: rel }
+        with:
+          pattern: "{Anonbar-*,anonproxy-burp-jar}"
+          merge-multiple: true
+          path: rel
       - uses: softprops/action-gh-release@v2
         with:
           files: rel/*

@@ -27,6 +27,12 @@ try:
 except ImportError:  # pragma: no cover
     httpx = None
 
+if httpx is not None:                     # noqa: E402 (mirrors guarded import)
+    _StatusError = httpx.HTTPStatusError
+else:                                     # pragma: no cover
+    class _StatusError(Exception):
+        response = None
+
 if TYPE_CHECKING:
     from . import Match
 
@@ -34,6 +40,8 @@ log = logging.getLogger("anonproxy.llm")
 
 _SYSTEM = """You are a PII/infrastructure detector for penetration-test data.
 Return ONLY a JSON array. Each element: {"text": <exact substring>, "type": <TYPE>}.
+
+Return ONLY JSON of shape {"entities":[{"text": "...", "type": "..."}]}.
 
 Detect and label these context-dependent entities:
 - HOSTNAME: bare machine names (DC01, FILESERVER-PRD, web01)
@@ -43,13 +51,34 @@ Detect and label these context-dependent entities:
 - CREDENTIAL: cleartext passwords or secrets, even without a label
 - PATH: filesystem paths that reveal users, clients, or engagements
 
+(constrained decoding enforces the shape; keep "text" an EXACT substring)
+
 Do NOT flag (these must stay so the AI can still help):
 - technology/product names & versions (IIS 10, Apache 2.4.49, OpenSSH 8.2)
 - CVE ids, tool names (nmap, mimikatz, bloodhound), protocols (SMB, LDAP), ports
 - generic English words
 
 Return the exact substring as it appears. If nothing qualifies, return [].
-No prose, no markdown, JSON array only."""
+No prose, no markdown — a single JSON object per the schema."""
+
+
+_DETECTOR_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "entities": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "type": {"type": "string"},
+                },
+                "required": ["text", "type"],
+            },
+        }
+    },
+    "required": ["entities"],
+}
 
 
 class LLMDetector:
@@ -58,6 +87,7 @@ class LLMDetector:
     def __init__(self, settings):
         self.settings = settings
         self._available: bool | None = None
+        self._schema_ok: bool | None = None   # None=untried, False=fell back
         self._model: str | None = None     # effective model actually used
         self._tags: list[str] = []
         self._reason: str = ""
@@ -144,12 +174,13 @@ class LLMDetector:
             start += size - overlap
 
     def _query(self, chunk: str) -> list[tuple[str, str]]:
+        use_schema = self._schema_ok is not False
         payload = {
             "model": self._model or self.settings.ollama_model,
             "system": _SYSTEM,
             "prompt": chunk,
             "stream": False,
-            "format": "json",
+            "format": _DETECTOR_SCHEMA if use_schema else "json",
             "options": {"temperature": 0.0},
         }
         try:
@@ -158,7 +189,18 @@ class LLMDetector:
                 json=payload, timeout=self.settings.ollama_timeout,
             )
             r.raise_for_status()
+            if use_schema:
+                self._schema_ok = True      # server accepted constrained output
             raw = r.json().get("response", "")
+        except _StatusError as e:
+            status = getattr(getattr(e, "response", None), "status_code", 0)
+            if status == 400 and self._schema_ok is not False:
+                # legacy Ollama without structured outputs — fall back once
+                self._schema_ok = False
+                log.warning("schema format rejected (%s); retrying with "
+                            "plain-json contract", str(e)[:120])
+                return self._query(chunk)
+            raise
         except Exception as e:
             # available() caches its result for the process lifetime; if a
             # live query fails, invalidate that cache so the NEXT detect()
