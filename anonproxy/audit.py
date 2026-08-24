@@ -59,6 +59,7 @@ _PAGE = r"""<!doctype html>
   .orig { color: #ff7b72; }
   .surr { color: #7ee787; }
   .muted { color: #6e7681; }
+  .lowconf { color: #d29922; }
   .err { color: #ff7b72; padding: 20px; }
 </style>
 </head>
@@ -74,6 +75,7 @@ _PAGE = r"""<!doctype html>
   <button id="refresh">↻ refresh</button>
   <button id="csv">⬇ export CSV</button>
   <label class="muted"><input type="checkbox" id="auto"> auto-refresh 5s</label>
+  <label class="muted"><input type="checkbox" id="lowonly"> low-confidence only (&lt;0.80)</label>
 </div>
 <div class="stats" id="stats"></div>
 <table>
@@ -81,6 +83,7 @@ _PAGE = r"""<!doctype html>
     <th data-k="entity_type">type</th>
     <th data-k="original">original</th>
     <th data-k="surrogate">surrogate</th>
+    <th data-k="confidence">conf</th>
   </tr></thead>
   <tbody id="rows"></tbody>
 </table>
@@ -149,18 +152,26 @@ function populateTypes() {
 function render() {
   const q = document.getElementById("q").value.toLowerCase();
   const t = document.getElementById("type").value;
+  const lowOnly = document.getElementById("lowonly").checked;
   let rows = data.filter(d =>
     (!t || d.entity_type === t) &&
-    (!q || (d.original+d.surrogate+d.entity_type).toLowerCase().includes(q)));
+    (!q || (d.original+d.surrogate+d.entity_type).toLowerCase().includes(q)) &&
+    (!lowOnly || (Number(d.confidence ?? 1) < 0.80)));
   rows.sort((a,b) => {
+    if (sortKey === "confidence") {
+      const d2 = (Number(a.confidence ?? 1) - Number(b.confidence ?? 1));
+      return sortAsc ? -d2 : d2;
+    }
     const x=(a[sortKey]||"").toString(), y=(b[sortKey]||"").toString();
     return sortAsc ? x.localeCompare(y) : y.localeCompare(x);
   });
   document.getElementById("rows").innerHTML = rows.map(d => `<tr>
     <td class="type">${esc(d.entity_type)}</td>
     <td class="orig">${esc(d.original)}</td>
-    <td class="surr">${esc(d.surrogate)}</td></tr>`).join("") ||
-    '<tr><td colspan="3" class="muted">no mappings yet</td></tr>';
+    <td class="surr">${esc(d.surrogate)}</td>
+    <td class="${Number(d.confidence ?? 1) < 0.8 ? "lowconf" : "muted"}">${
+      Number(d.confidence ?? 1).toFixed(2)}</td></tr>`).join("") ||
+    '<tr><td colspan="4" class="muted">no mappings yet</td></tr>';
 }
 
 function esc(s){return (s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}

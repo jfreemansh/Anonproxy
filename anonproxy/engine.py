@@ -72,6 +72,9 @@ class Engine:
         # coverage — track it so operators can see it during an engagement,
         # not just in a log line nobody's tailing.
         self._detector_failures: dict[str, int] = {}
+        # per-original detection confidence (regex/scope=1.0, backends=model
+        # score) — surfaced through export()/audit so risky redactions stand out
+        self._confidence: dict[str, float] = {}
 
     def detector_failures(self) -> dict[str, int]:
         return dict(self._detector_failures)
@@ -109,6 +112,7 @@ class Engine:
                     continue  # only found via the decoded copy; doesn't exist raw
                 entities[m.text] = m.entity_type
                 from_regex.add(m.text)
+                self._confidence[m.text] = 1.0
 
         # 2) contextual backends (ollama / gliner / piiranha / anonymizer-slm)
         if contextual:
@@ -127,6 +131,7 @@ class Engine:
                     if entities.get(m.text) in _REGEX_WINS:
                         continue   # regex type is more precise for structured data
                     entities[m.text] = m.entity_type
+                    self._confidence[m.text] = float(m.confidence)
 
         # 3) consistency rescan: anything the vault already knows, re-catch it now
         for original, etype in self.vault.known_originals():
@@ -142,6 +147,7 @@ class Engine:
                 if len(fe) >= 6 and fe in word and fe != word \
                         and _LABELISH.match(word.replace(fe, "", 1)):
                     del entities[word]
+                    self._confidence.pop(word, None)
                     break
 
         return self._filter(entities, from_regex)
@@ -250,4 +256,7 @@ class Engine:
         return False
 
     def export(self) -> list[dict]:
-        return self.vault.export()
+        rows = self.vault.export()
+        for r in rows:
+            r["confidence"] = round(self._confidence.get(r["original"], 1.0), 2)
+        return rows

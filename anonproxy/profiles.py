@@ -115,9 +115,10 @@ def close_engagement(settings: Settings, keep_vault: bool = False,
     csv_path = out_dir / f"{settings.engagement_id}-{stamp}.csv"
     with csv_path.open("w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["entity_type", "original", "surrogate"])
+        w.writerow(["entity_type", "original", "surrogate", "confidence"])
         for r in rows:
-            w.writerow([r["entity_type"], r["original"], r["surrogate"]])
+            w.writerow([r["entity_type"], r["original"], r["surrogate"],
+                        r.get("confidence", 1.0)])
 
     vault_removed = False
     if not keep_vault and not settings.ephemeral:
