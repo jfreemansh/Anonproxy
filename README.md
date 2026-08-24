@@ -181,15 +181,19 @@ scripts/anon close acme-web            # export JSON+CSV evidence + wipe vault
 `~/.anonproxy/profiles/`; `ANONPROXY_PROFILE_DIR` overrides). `up <profile>`
 without `--daemon` behaves like `serve` with the profile applied.
 
-On macOS there's also a menubar app for point-and-go: pick an engagement,
-Start/Stop, ＋ **New engagement…** (asks name + scope terms, fills in the rest),
-copy client env, open `/audit`, run `verify`, and one-click **Export &
-archive vault…** close-out.
+On macOS there's also a **native status-bar app** (AppKit — no Python UI deps,
+no app bundle required): pick an engagement, Start/Stop, ＋ **New engagement…**
+(a real form: name, scope terms, port, notes, ephemeral toggle), copy client
+env, open `/audit`, run `verify`, and one-click **Export & archive vault…**
+close-out.
 
 ```bash
-pip install -r requirements.txt && pip install rumps   # or: pip install 'anonproxy[menu]'
-python3 scripts/anonproxy_menubar.py
+scripts/build_anonbar.sh        # → build/anonbar (needs Xcode command line tools)
+build/anonbar &                 # or: ln -sf $PWD/build/anonbar /usr/local/bin/anonbar
 ```
+
+It shells out to the same CLI, so profiles created in either place just show
+up in the other. Env overrides: `ANONPROXY_HOME`, `PYTHON_BIN`.
 
 > Ephemeral profiles (`--ephemeral`) leave nothing on disk — but that also
 > means a close-out *after* stopping finds no mappings. Run close-out while
