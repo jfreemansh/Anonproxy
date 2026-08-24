@@ -129,10 +129,14 @@ the host. Pick whichever setup you prefer.
 > The app ships the entire Anonproxy engine inside itself — this download is
 > the whole product.
 
-*1 · Install* — grab `Anonbar-macos.zip` from the project's
-[Releases](../../releases) page, unzip, drag **Anonbar.app** to Applications,
-and open it (unsigned local build: right-click → *Open* the first time, or
-`xattr -cr /Applications/Anonbar.app`). A 🛡️ icon appears in your menu bar.
+*1 · Install* — from the project's [Releases](../../releases) page grab the
+zip for your Mac: **`Anonbar-macos-arm64.zip`** (Apple Silicon M1–M4) or
+**`Anonbar-macos-intel.zip`** (Intel Macs). Unzip, drag **Anonbar.app** to
+Applications, open it (unsigned build: right-click → *Open* the first time,
+or `xattr -cr /Applications/Anonbar.app`). A 🛡️ icon appears in your menu bar.
+
+> **The app is macOS-only.** It does not run on Windows or Linux — those
+> platforms use the terminal CLI instead (options **B**/**C** below).
 
 *2 · Requirements* — none. The app embeds its own Python interpreter and
 every dependency (v0.1.2+): no Homebrew, no pip, no network on first run,
