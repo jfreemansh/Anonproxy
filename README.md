@@ -270,6 +270,30 @@ echo 'Host dc01.acmecorp.local at 10.20.0.10, NTLM 8846f7eaee8fb117ad06bdd830b75
   | python -m anonproxy anon --engagement acme-2026
 ```
 
+## Using it from Burp Suite
+
+Three ways, all sharing one vault — the same value is always the same
+surrogate across Claude Code, the OpenAI SDK and Burp:
+
+1. **Claude Code / MCP (most common)** — nothing to configure in Burp. Your
+   MCP tool results flow through the proxy (`ANTHROPIC_BASE_URL`), which
+   anonymizes them like any other tool output.
+2. **Right-click → Copy anonymized** — select any request/response in Proxy
+   history, Repeater or a message editor, right-click, and the full HTTP
+   text lands on your clipboard with surrogates applied. Paste into
+   claude.ai, ChatGPT, a ticket — anywhere. Fails closed: if the engine is
+   unreachable, nothing is copied.
+3. **Repeater pointed at an LLM endpoint** — add the header `X-Anonproxy:
+   anon` and the extension anonymizes the Cookie header and body on the way
+   out, then deanonymizes the response.
+
+The extension follows the **engine's active engagement** automatically
+(whatever the menubar started) — no more drifting back to `default`.
+Override with `-Danonproxy.engagement=acme-2026` if you ever want it
+deliberately pinned. Grab `anonproxy-burp.jar` from the
+[Releases](../../releases) page (or build: `cd burp && gradle jar`), load it
+via Extensions → Add → Java. Details in `burp/README.md`.
+
 ## End-to-end example (no Burp)
 
 Send real tool output to a real LLM through the proxy and get a useful answer
