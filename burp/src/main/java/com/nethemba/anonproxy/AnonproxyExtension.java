@@ -359,9 +359,8 @@ public class AnonproxyExtension implements BurpExtension, HttpHandler, ContextMe
         } else {
             // engine unreachable: fail CLOSED — never place unredacted
             // traffic on a clipboard under an "anonymized" label.
-            log.logToError("engine unreachable — clipboard NOT populated with "
-                    + "request/response content");
-            result = "[ANONPROXY: engine unreachable — nothing copied]";
+            log.logToError("clipboard NOT populated (engine error) — see Errors tab");
+            result = "[ANONPROXY: engine error — nothing copied]";
         }
         var selection = new StringSelection(result);
         Toolkit.getDefaultToolkit().getSystemClipboard().setContents(selection, null);
