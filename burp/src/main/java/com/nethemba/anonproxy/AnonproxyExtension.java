@@ -38,12 +38,23 @@ import java.util.concurrent.ConcurrentHashMap;
 public class AnonproxyExtension implements BurpExtension, HttpHandler {
 
     // Where the Python engine API listens (python -m anonproxy serve).
-    private static final String ENGINE = System.getenv().getOrDefault(
-            "ANONPROXY_ENGINE", "http://127.0.0.1:8099");
-    private static final String ENGAGEMENT = System.getenv().getOrDefault(
-            "ENGAGEMENT_ID", "default");
-    private static final String TOKEN = System.getenv().getOrDefault(
-            "ANONPROXY_API_TOKEN", "");
+    // Precedence: JVM system property > environment variable > default.
+    // System properties matter because Burp launched from the Dock does not
+    // inherit your shell environment (-Danonproxy.engagement=acme-2026).
+    private static String cfg(String prop, String envKey, String dflt) {
+        String v = System.getProperty(prop);
+        if (v != null && !v.isBlank()) return v.trim();
+        v = System.getenv(envKey);
+        if (v != null && !v.isBlank()) return v.trim();
+        return dflt;
+    }
+
+    private static final String ENGINE = cfg(
+            "anonproxy.engine", "ANONPROXY_ENGINE", "http://127.0.0.1:8099");
+    private static final String ENGAGEMENT = cfg(
+            "anonproxy.engagement", "ENGAGEMENT_ID", "default");
+    private static final String TOKEN = cfg(
+            "anonproxy.token", "ANONPROXY_API_TOKEN", "");
 
     private MontoyaApi api;
     private Logging log;

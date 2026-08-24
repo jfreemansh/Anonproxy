@@ -36,7 +36,17 @@ at runtime.)
 
    | Variable | Default | Meaning |
    |---|---|---|
-   | `ANONPROXY_ENGINE` | `http://127.0.0.1:8099` | engine API base URL |
+   Configuration precedence: JVM system property > environment variable > default.
+Burp launched from the Dock does not inherit your shell env — prefer system
+properties via your launcher/vmoptions (`-Danonproxy.engine=…`,
+`-Danonproxy.engagement=acme-2026`, `-Danonproxy.token=…`) or
+`launchctl setenv ENGAGEMENT_ID …`.
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `ANONPROXY_ENGINE` / `anonproxy.engine` | `http://127.0.0.1:8099` | engine API base URL |
+| `ENGAGEMENT_ID` / `anonproxy.engagement` | `default` | vault isolation per client |
+| `ANONPROXY_API_TOKEN` / `anonproxy.token` | *(empty)* | engine API auth token |
    | `ENGAGEMENT_ID` | `default` | vault to use (must match the proxy) |
    | `ANONPROXY_API_TOKEN` | *(empty)* | sent as `X-Anonproxy-Token` if set |
 

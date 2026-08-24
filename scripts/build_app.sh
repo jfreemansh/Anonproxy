@@ -51,7 +51,11 @@ if [ -n "${RUNTIME_DIR:-}" ]; then
         HOST_PY="${HOST_PYTHON:-python3}"
         "$HOST_PY" -m pip install --no-input --timeout 60 --retries 5 \
             --no-cache-dir --only-binary=:all: \
-            --platform "$PIP_PLAT" --platform macosx_10_9_x86_64 \
+            --platform "$PIP_PLAT" \
+            --platform macosx_10_9_x86_64 --platform macosx_10_12_x86_64 \
+            --platform macosx_11_0_x86_64 --platform macosx_12_0_x86_64 \
+            --platform macosx_13_0_x86_64 --platform macosx_14_0_x86_64 \
+            --platform macosx_11_0_universal2 \
             --python-version 3.12 --implementation cp --abi cp312 \
             --target "$SITEPKG" -r "$ROOT/requirements.txt"
     fi

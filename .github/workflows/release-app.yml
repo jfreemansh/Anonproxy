@@ -35,6 +35,7 @@ jobs:
         run: scripts/build_app.sh
         env:
           RUNTIME_DIR: /tmp/pbs/python
+          ARCH: ${{ matrix.arch }}
 
       - name: Verify assembled bundle structure
         run: |
@@ -44,6 +45,10 @@ jobs:
           test -f "$APP/Contents/Resources/requirements.txt"
           grep -q cryptography "$APP/Contents/Resources/requirements.txt"
           test -x "$APP/Contents/Frameworks/python/bin/python3"
+          # the Mach-O slice must match the requested arch (regression: the
+          # v0.1.5 'intel' zip shipped an arm64 binary)
+          echo "$APP/Contents/MacOS/anonbar" | grep -q "x86_64" && EXPECT=x86_64 || EXPECT=arm64
+          lipo -info "$APP/Contents/MacOS/anonbar" | grep -q "$EXPECT"
           # arm64 runner executes the bundled interpreter directly;
           # x86_64 bundle gets structural checks (its .so files are foreign here)
           if [ "${{ matrix.verify_exec }}" = "true" ]; then
