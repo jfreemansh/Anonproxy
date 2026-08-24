@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "anonproxy"
-version = "0.1.3"
+version = "0.1.4"
 description = "Reversible anonymization proxy for sending pentest data to LLMs"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,11 +13,12 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
     "httpx>=0.27",
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
-vault-crypto = ["cryptography>=42"]
+vault-crypto = []                       # deprecated no-op: crypto is now a base dependency
 # Optional contextual-detection backends (enable via ANONPROXY_DETECTORS).
 gliner = ["gliner>=0.2.13"]
 gliner2 = ["gliner2>=0.1"]                       # SOTA: fastino/gliner2-privacy-filter-PII-multi

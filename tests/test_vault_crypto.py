@@ -2,11 +2,11 @@
 import os
 import sys
 
+import sys
+
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-pytest.importorskip("cryptography")
 
 from anonproxy.config import Settings          # noqa: E402
 from anonproxy import Engine                   # noqa: E402

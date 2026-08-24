@@ -9,12 +9,12 @@ jobs:
   build:
     strategy:
       fail-fast: false
-      # x86_64 disabled: macos-13 runners are perpetually starved (hours in
-      # queue). Re-add { os: macos-13, arch: x86_64, pbsarch: x86_64-apple-darwin }
-      # when capacity recovers; Intel users can build locally via build_app.sh.
+      # Both arches build on macos-14: the Swift side is cross-compiled and
+      # foreign-arch deps arrive as prebuilt wheels (no Intel runner needed).
       matrix:
         include:
           - { os: macos-14, arch: arm64,  pbsarch: aarch64-apple-darwin }
+          - { os: macos-14, arch: x86_64, pbsarch: x86_64-apple-darwin }
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write

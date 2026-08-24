@@ -320,7 +320,7 @@ a session.
    evidence/audit trail, then archive or delete the vault. Use
    `ANONPROXY_EPHEMERAL=1` for in-memory-only (no disk persistence), or set
    `ANONPROXY_VAULT_PASSPHRASE` to keep an AES-GCM-encrypted vault at rest
-   instead of plaintext sqlite.
+   instead of plaintext sqlite — see [Encrypted vaults](#encrypted-vaults-at-rest).
 
 ## Configuration
 
@@ -339,7 +339,7 @@ a session.
 | `ANONYMIZER_SLM_MODEL` | `anonymizer-slm` | Ollama name of the imported Anonymizer SLM. |
 | `ANONPROXY_TOLERANT` | `true` | Tolerant restoration (vs. exact). |
 | `ANONPROXY_EPHEMERAL` | `false` | In-memory vault, nothing on disk. |
-| `ANONPROXY_VAULT_PASSPHRASE` / `_KEYFILE` | *(empty)* | Encrypt the vault at rest (AES-GCM envelope; either var enables it). Requires `pip install 'anonproxy[vault-crypto]'`. Wrong passphrase fails cleanly; existing plaintext vaults are adopted (encrypted) on first write. |
+| `ANONPROXY_VAULT_PASSPHRASE` / `_KEYFILE` | *(empty)* | Encrypt the vault at rest (AES-GCM envelope). Either var enables it. Wrong passphrase fails cleanly; existing plaintext vaults are adopted (encrypted) on first write. See [Encrypted vaults](#encrypted-vaults-at-rest). |
 | `ANONPROXY_AUDIT` | `true` | Serve the `/audit` dashboard. |
 | `ANONPROXY_PROFILE_DIR` | `~/.anonproxy/profiles` | Where engagement profiles (one JSON each) live. |
 | `ANONPROXY_EXPORTS_DIR` | `~/.anonproxy/exports` | Close-out evidence output root. |
@@ -448,6 +448,26 @@ Two ways to cover bare names:
 > `ANONPROXY_CONTEXTUAL_MIN_LEN`.
 
 Use both: seed what you know, let the model catch the rest.
+
+### Encrypted vaults at rest
+
+By default the engagement vault is a small SQLite file under
+`~/.anonproxy/vaults/` containing the `original → surrogate` pairs — i.e.
+your real client data. To keep that file encrypted on disk:
+
+```bash
+export ANONPROXY_VAULT_PASSPHRASE="pick something long"   # or _KEYFILE=/path/to/key
+python -m anonproxy serve --engagement acme-2026
+```
+
+What you get: the vault becomes a single AES-GCM-encrypted envelope
+(`<engagement>.sqlite.enc`); while running, the plaintext exists only in the
+process memory and a private temp file that is deleted on exit. Re-opening
+with the same passphrase restores everything automatically; a wrong one fails
+immediately with a clear error instead of corrupting data. An existing
+plaintext vault is adopted (encrypted) the next time something is written,
+and `close-out` removes the envelope along with everything else. The `/audit`
+stats bar shows a 🔒 pill whenever the live vault is encrypted.
 
 ## Verify coverage before an engagement
 

@@ -41,10 +41,7 @@ log = logging.getLogger("anonproxy.vault")
 # Whole-file AES-GCM envelope next to where the plaintext sqlite would live.
 # The DB runs from a private temp file while the process is up; every commit
 # re-seals the envelope. Format: ANPENC1 | salt(16) | nonce(12) | ciphertext.
-try:
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-except ImportError:          # only needed when a passphrase is actually set
-    AESGCM = None
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 _ENC_MAGIC = b"ANPENC1"
 _SALT_LEN = 16
@@ -69,10 +66,6 @@ class Vault:
             kf = Path(settings.vault_keyfile)
             passphrase = kf.read_text().splitlines()[0].strip()
         if passphrase:
-            if AESGCM is None:
-                raise RuntimeError(
-                    "vault encryption requires the 'cryptography' package — "
-                    "install it with: pip install 'anonproxy[vault-crypto]'")
             safe = "".join(c if c.isalnum() or c in "-_." else "_"
                            for c in settings.engagement_id)
             self._enc_path = str(settings.vault_path()) + ".enc"
