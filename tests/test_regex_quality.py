@@ -77,8 +77,8 @@ def test_labeled_username_excludes_booleans_and_numbers():
 def test_js_object_literal_labels_are_not_usernames():
     """Field FP: burp exports carry i18n/UI tables (User:"Failed",
     log:"Hit") — unquoted-key colon pairs must never become USERNAMEs."""
-    for text in ('User:"Failed"', 'log:"Hit"', 'Delete:"Delete"',
-                 'Username:"Username"', 'Acknowledge:"Ack"',
+    for text in ('User:"Failed"', 'log:"Hit"', 'log="Hit"', "log='Hit'",
+                 'Delete:"Delete"', 'Username:"Username"', 'Acknowledge:"Ack"',
                  'Ticket:"Ticket"', 'Alert:"Alert"'):
         users = [v for t, v in _hits(text) if t == "USERNAME"]
         assert not users, f"UI label became a USERNAME: {users}"

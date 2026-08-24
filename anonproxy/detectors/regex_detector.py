@@ -130,7 +130,7 @@ _rule("USERNAME", r"\b[A-Za-z0-9.-]{2,30}\\(?![nrt\"'\\])[A-Za-z0-9._-]{2,30}\b"
 #     the vault with UI-label words as "usernames". Booleans/numbers excluded.
 _rule("USERNAME",
       r"(?i)\b(?:username|user[_-]?name|screen[_-]?name|login|logname|log|user)"
-      r"\"?\]?\s*=\s*\"?(?!(?:true|false|null|none)\b)"
+      r"\"?\]?\s*=\s*(?!(?:true|false|null|none|\"|'))"
       r"([A-Za-z][A-Za-z0-9._@-]{2,31})", group=1)
 _rule("USERNAME",
       r"\"(?:username|user[_-]?name|screen[_-]?name|login)\"\s*:\s*\""
