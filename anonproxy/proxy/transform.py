@@ -73,6 +73,44 @@ def _anon_tool_call(engine, tc: Any) -> Any:
     return tc
 
 
+def _sanitize_anthropic_messages(messages: list) -> list:
+    """Drop empty / whitespace-only text content blocks.
+
+    Upstream rejects them ('text content blocks must be non-empty'). They
+    arise when a truncated stream delivered only empty deltas for a block
+    and the client stored the block anyway — the poison then replays in
+    every subsequent request and 400s the session forever.
+    """
+    out = []
+    for m in messages:
+        if not isinstance(m, dict):
+            out.append(m)
+            continue
+        content = m.get("content")
+        if isinstance(content, list):
+            blocks = []
+            for b in content:
+                if not isinstance(b, dict):
+                    blocks.append(b)
+                    continue
+                if b.get("type") == "text" and isinstance(b.get("text"), str) \
+                        and not b["text"].strip():
+                    continue                      # empty text block — drop
+                if b.get("type") == "tool_result" and isinstance(b.get("content"), list):
+                    inner = [c for c in b["content"] if not (
+                        isinstance(c, dict) and c.get("type") == "text"
+                        and isinstance(c.get("text"), str) and not c["text"].strip())]
+                    b = {**b, "content": inner if inner else " "}
+                blocks.append(b)
+            if not blocks:
+                blocks = [{"type": "text", "text": " "}]
+            m = {**m, "content": blocks}
+        elif isinstance(content, str) and not content.strip():
+            m = {**m, "content": " "}
+        out.append(m)
+    return out
+
+
 def anonymize_anthropic_request(engine, body: dict) -> dict:
     body = dict(body)
     if "system" in body:
@@ -83,6 +121,7 @@ def anonymize_anthropic_request(engine, body: dict) -> dict:
             if isinstance(m, dict) else m
             for m in body["messages"]
         ]
+        body["messages"] = _sanitize_anthropic_messages(body["messages"])
     return body
 
 
