@@ -31,6 +31,12 @@ _REGEX_WINS = frozenset({
     "CIDR", "URL", "DOMAIN", "HOSTNAME", "EMAIL_ADDRESS", "PATH", "PAYMENT_CARD",
 })
 
+# Shapes that are provably benign but seduce contextual models: clock times
+# and durations (14:23:01, 00:00:02.5). The regex floor already rejects them;
+# contextual backends (gliner2 especially) still flag them, mangling real log
+# timelines. Dropped before vault insertion.
+_TIMELIKE = re.compile(r"^\d{1,2}:\d{2}(:\d{2})?([.]\d{1,3})?$")
+
 # A contextual entity that is just "<label>=<value>" / "<label>: <value>" wrapping
 # a precise floor entity (e.g. the model grabbed "PHPSESSID=<token>" while regex
 # already captured "<token>"). Matches the leftover label/separator after removing
@@ -130,6 +136,8 @@ class Engine:
                 for m in matches:
                     if entities.get(m.text) in _REGEX_WINS:
                         continue   # regex type is more precise for structured data
+                    if _TIMELIKE.match(m.text):
+                        continue   # timestamp/duration, not an entity
                     entities[m.text] = m.entity_type
                     self._confidence[m.text] = float(m.confidence)
 
@@ -220,9 +228,15 @@ class Engine:
     def deanonymize(self, text: str) -> str:
         return self.restorer.restore(text, self.vault.all_mappings())
 
-    def stream_restorer(self) -> StreamRestorer:
+    def stream_restorer(self, *, json_args: bool = False) -> StreamRestorer:
+        # json_args=True: the fragment stream is a JSON document the client
+        # assembles incrementally (tool-call partial_json/arguments) — restored
+        # values containing quotes/backslashes/newlines must land string-escaped
+        # or Claude Code's parse of the accumulated buffer explodes. Plain-text
+        # streams keep originals verbatim.
         return StreamRestorer(self.vault.all_mappings(),
-                              tolerant=self.settings.restore_tolerant)
+                              tolerant=self.settings.restore_tolerant,
+                              escape_originals=json_args)
 
     # -- introspection ------------------------------------------------------
     def stats(self) -> dict:

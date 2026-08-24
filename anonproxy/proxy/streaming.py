@@ -63,7 +63,10 @@ async def anthropic_stream(engine, aiter_bytes) -> AsyncIterator[str]:
             idx = obj.get("index", 0)
             entry = restorers.get(idx)
             if entry is None:
-                entry = restorers[idx] = (engine.stream_restorer(), dtype)
+                entry = restorers[idx] = (
+                    engine.stream_restorer(json_args=(dtype == "input_json_delta")),
+                    dtype,
+                )
             sr, _ = entry
             obj["delta"][field] = sr.push(obj["delta"].get(field, ""))
             yield f"data: {json.dumps(obj)}\n\n"
@@ -132,6 +135,6 @@ async def openai_stream(engine, aiter_bytes) -> AsyncIterator[str]:
                     key = (cidx, tidx)
                     sr = tool_restorers.get(key)
                     if sr is None:
-                        sr = tool_restorers[key] = engine.stream_restorer()
+                        sr = tool_restorers[key] = engine.stream_restorer(json_args=True)
                     fn["arguments"] = sr.push(args)
         yield f"data: {json.dumps(obj)}\n\n"

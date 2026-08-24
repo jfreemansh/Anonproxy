@@ -146,6 +146,7 @@ SAFE_WORDS: frozenset[str] = frozenset(w.lower() for w in {
     "localhost", "example", "pentest", "8.8.8.8", "1.1.1.1", "127.0.0.1",
     "0.0.0.0", "255.255.255.255", "169.254.169.254", "::1",
     "github.com", "gitlab.com", "anthropic.com", "openai.com",
+    "claude.ai", "claude-code",
 })
 
 

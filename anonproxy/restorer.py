@@ -29,6 +29,8 @@ hold-back buffer so a surrogate split across SSE chunks is still restored whole.
 """
 from __future__ import annotations
 
+import json
+
 # characters models inject around/inside tokens that are NEVER part of a surrogate
 _NOISE = set("*`~")
 _ZEROWIDTH = set("​‌‍⁠﻿")
@@ -45,8 +47,19 @@ def _normalize_char(ch: str) -> str:
 
 
 class TolerantRestorer:
-    def __init__(self, tolerant: bool = True):
+    def __init__(self, tolerant: bool = True, escape_originals: bool = False):
         self.tolerant = tolerant
+        # When restoring into a JSON document the client assembles
+        # incrementally (streamed tool-call arguments), an original containing
+        # quotes/backslashes/newlines must land as a *string-escaped* fragment
+        # or the accumulated document stops being valid JSON.
+        self.escape_originals = escape_originals
+
+    @staticmethod
+    def _substitute(original: str, escape: bool) -> str:
+        if escape:
+            return json.dumps(original, ensure_ascii=False)[1:-1]
+        return original
 
     # -- normalized projection + index map ----------------------------------
     def _project(self, text: str):
@@ -130,10 +143,11 @@ class TolerantRestorer:
     def restore(self, text: str, mappings: list[tuple[str, str]]) -> str:
         if not text or not mappings:
             return text
+        esc = self.escape_originals
         if not self.tolerant:
             result = text
             for surrogate, original in mappings:
-                result = result.replace(surrogate, original)
+                result = result.replace(surrogate, self._substitute(original, esc))
             return result
 
         spans = self.find_spans(text, mappings)
@@ -143,7 +157,7 @@ class TolerantRestorer:
         cursor = 0
         for start, end, original in spans:
             out.append(text[cursor:start])
-            out.append(original)
+            out.append(self._substitute(original, esc))
             cursor = end
         out.append(text[cursor:])
         return "".join(out)
@@ -171,8 +185,10 @@ class StreamRestorer:
     restoration.  Call :meth:`push` per delta and :meth:`flush` at end.
     """
 
-    def __init__(self, mappings: list[tuple[str, str]], tolerant: bool = True):
-        self.restorer = TolerantRestorer(tolerant=tolerant)
+    def __init__(self, mappings: list[tuple[str, str]], tolerant: bool = True,
+                 escape_originals: bool = False):
+        self.restorer = TolerantRestorer(tolerant=tolerant,
+                                         escape_originals=escape_originals)
         self.mappings = mappings
         self._buf = ""
         # worst-case footprint = surrogate length + a little room for injected noise
