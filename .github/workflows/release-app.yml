@@ -1,0 +1,36 @@
+name: Build macOS app
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble Anonbar.app
+        run: scripts/build_app.sh
+
+      - name: Zip for distribution
+        run: |
+          cd build
+          ditto -c -k --keepParent Anonbar.app Anonbar-macos.zip
+          shasum -a 256 Anonbar-macos.zip > Anonbar-macos.zip.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Anonbar-macos
+          path: |
+            build/Anonbar-macos.zip
+            build/Anonbar-macos.zip.sha256
+
+      - name: Attach to release (tag builds only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/Anonbar-macos.zip
+            build/Anonbar-macos.zip.sha256

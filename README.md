@@ -123,7 +123,21 @@ One engine, three front ends:
 Everything runs on your machine — no VPS, no remote, nothing sensitive leaves
 the host. Pick whichever setup you prefer.
 
-**A. Guided wizard (easiest)**
+**A. macOS app (recommended)**
+
+Download `Anonbar-macos.zip` from the project's
+[Releases](../../releases) page, unzip, drag **Anonbar.app** to
+Applications, and open it (unsigned local build: right-click → *Open* the
+first time, or `xattr -cr /Applications/Anonbar.app`). The 🛡️ icon appears
+in your menu bar.
+
+Requirements: any Python ≥ 3.10 on the machine (`brew install python@3.12`).
+Nothing else — on first **Start** the app creates its own isolated
+environment (`~/.anonproxy/venv`) and installs its dependencies for you.
+Building from source instead? See
+[Fast workflow](#fast-workflow-profiles-scripts_anon-macos-menubar).
+
+**B. Guided wizard**
 
 ```bash
 pip install -r requirements.txt
@@ -133,7 +147,7 @@ python -m anonproxy wizard
 It asks for the engagement name, finds/pulls an Ollama model, writes a `.env`,
 and offers to launch the proxy.
 
-**B. Manual**
+**C. Manual**
 
 ```bash
 pip install -r requirements.txt
@@ -141,7 +155,7 @@ ollama pull qwen3:4b                         # optional, for best recall
 python -m anonproxy serve --engagement acme-2026
 ```
 
-**C. Docker (bundles Ollama)**
+**D. Docker (bundles Ollama)**
 
 ```bash
 ENGAGEMENT_ID=acme-2026 docker compose up -d

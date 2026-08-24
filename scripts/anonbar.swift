@@ -112,14 +112,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     let menu = NSMenu()
 
-    // repo root resolution — survives the repo being MOVED anywhere:
+    // repo root resolution — prefers a LIVE repo, falls back to the SNAPSHOT
+    // of the package bundled inside this app, so moving/deleting the repo
+    // never breaks the menu bar:
     //   1. $ANONPROXY_HOME          (explicit override)
     //   2. walk up from this binary (works whenever the app lives in the repo)
     //   3. ~/.anonproxy/home        (pointer file written by installer / picker)
     //   4. compile-time source path (last resort)
-    //   5. ask once via folder picker, then persist the choice
+    //   5. bundled snapshot         (Anonbar.app/Contents/Resources/anonproxy)
     lazy var anonDir: URL =
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".anonproxy")
+    private(set) var homeSource = "unknown"
     lazy var home: URL = resolveHome()
     lazy var profilesDir: URL = anonDir.appendingPathComponent("profiles")
     lazy var logsDir: URL = anonDir.appendingPathComponent("logs")
@@ -135,24 +138,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return looksLikeRepo(std) ? std : nil
         }
         if let e = ProcessInfo.processInfo.environment["ANONPROXY_HOME"], let u = valid(e) {
+            homeSource = "env"
             return u
         }
         if let exe = Bundle.main.executableURL {
             var dir = exe.deletingLastPathComponent().standardized
             while dir.path != "/" && dir.path != "." {
-                if let u = valid(dir.path) { return u }
+                if let u = valid(dir.path) {
+                    homeSource = "walk-up"
+                    return u
+                }
                 dir.deleteLastPathComponent()
             }
         }
         let ptr = anonDir.appendingPathComponent("home")
         if let raw = try? String(contentsOf: ptr, encoding: .utf8) {
             let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !s.isEmpty, let u = valid(s) { return u }
+            if !s.isEmpty, let u = valid(s) {
+                homeSource = "pointer"
+                return u
+            }
         }
         if let u = valid(URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()      // scripts/
             .deletingLastPathComponent()      // repo/
             .path) {
+            homeSource = "compile-time"
+            return u
+        }
+        // standalone fallback: the package snapshot shipped inside this app
+        if let res = Bundle.main.resourceURL, let u = valid(res.path) {
+            homeSource = "bundled"
             return u
         }
         let panel = NSOpenPanel()
@@ -163,6 +179,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             try? FileManager.default.createDirectory(at: anonDir,
                                                      withIntermediateDirectories: true)
             try? u.path.write(to: ptr, atomically: true, encoding: .utf8)
+            homeSource = "picked"
             return u
         }
         return URL(fileURLWithPath: "/nonexistent-anonproxy-home")
@@ -192,6 +209,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     var proc: Process?
     var childProfile: String?
+    var setupInProgress = false
+
+    lazy var venvPy: String =
+        anonDir.appendingPathComponent("venv/bin/python").path
+
+    func venvReady() -> Bool {
+        FileManager.default.isExecutableFile(atPath: venvPy)
+    }
+
+    func requirementsPath() -> String? {
+        let inRepo = home.appendingPathComponent("requirements.txt").path
+        if FileManager.default.fileExists(atPath: inRepo) { return inRepo }
+        if let res = Bundle.main.resourceURL?
+            .appendingPathComponent("requirements.txt").path,
+           FileManager.default.fileExists(atPath: res) { return res }
+        return nil
+    }
+
+    /// First-run bootstrap: an isolated venv under ~/.anonproxy/venv with the
+    /// project's dependencies, so end users never run pip by hand.
+    func ensureVenv(done: @escaping (Bool, String) -> Void) {
+        if venvReady() { done(true, ""); return }
+        let havePython = FileManager.default.isExecutableFile(atPath: pythonBin)
+            || pythonBin == "python3"
+        guard havePython else { done(false, "no python>=3.10 found"); return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            try? FileManager.default.createDirectory(at: self.anonDir,
+                                                     withIntermediateDirectories: true)
+            let mk = sh([self.pythonBin, "-m", "venv", self.venvPy
+                          .replacingOccurrences(of: "/bin/python", with: "")],
+                        cwd: self.home, timeout: 300)
+            guard mk.0 == 0 else { done(false, mk.1); return }
+            guard let req = self.requirementsPath() else {
+                done(true, "(no requirements found — skipped pip)")
+                return
+            }
+            let pip = sh([self.venvPy, "-m", "pip", "install", "--quiet",
+                          "-r", req], cwd: self.home, timeout: 900)
+            done(pip.0 == 0, pip.1)
+        }
+    }
     var selected: String = "" {
         didSet { persistSelection() }
     }
@@ -261,7 +320,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func refreshTitle() {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.item.button?.title = self.runningChild() ? ICON_ON : ICON_OFF
+            self.item.button?.title =
+                self.setupInProgress ? "🛡️◌"
+                : (self.runningChild() ? ICON_ON : ICON_OFF)
         }
     }
 
@@ -278,6 +339,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                      "Stop it or change the port in profile '\(name)'.")
             return
         }
+        if !venvReady() && !setupInProgress {
+            setupInProgress = true
+            refreshTitle()
+            ensureVenv { [weak self] ok, out in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.setupInProgress = false
+                    self.refreshTitle()
+                    if ok { self.startChild(name) }
+                    else {
+                        alertBox("First-time setup failed",
+                                 String(out.suffix(400)) +
+                                 "\n\n(needs any Python >= 3.10 on the machine)")
+                    }
+                }
+            }
+            return
+        }
+        if setupInProgress { return }
         let logPath = logsDir.appendingPathComponent("anonbar-\(name).log").path
         FileManager.default.createFile(atPath: logPath, contents: nil)
         let logf = FileHandle(forWritingAtPath: logPath)
@@ -285,11 +365,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var childEnv = ProcessInfo.processInfo.environment
         childEnv["PYTHONPATH"] = home.path
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: pythonBin.hasPrefix("/")
-                              ? pythonBin : "/usr/bin/env")
-        p.arguments = pythonBin.hasPrefix("/")
-                      ? ["-m", "anonproxy", "up", name]
-                      : ["python3", "-m", "anonproxy", "up", name]
+        p.executableURL = URL(fileURLWithPath: venvPy)
+        p.arguments = ["-m", "anonproxy", "up", name]
         p.currentDirectoryURL = home
         p.environment = childEnv
         p.standardOutput = logf
@@ -502,6 +579,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // debug: --debug prints resolved config and exits without UI
     static func debugRun(_ d: AppDelegate) {
         print("home=\(d.home.path)")
+        print("source=\(d.homeSource)")
         print("python=\(d.pythonBin)")
         print("profiles=\(d.profiles().map { $0.name }.joined(separator: ","))")
         print("selected=\(d.selected)")
@@ -512,6 +590,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
 let app = NSApplication.shared
 let delegate = AppDelegate()
+
+if CommandLine.arguments.contains("--ensure-venv") {
+    delegate.ensureVenv { ok, out in
+        print("venv:", delegate.venvPy)
+        print(ok ? "READY" : "FAILED:\n\(out.suffix(600))")
+        exit(ok ? 0 : 1)
+    }
+    dispatchMain()
+}
 
 if CommandLine.arguments.contains("--debug") {
     delegate.selected = (try? String(
