@@ -53,6 +53,16 @@ class Settings:
     # Keep the vault only in memory (nothing persisted to disk after exit).
     ephemeral: bool = field(default_factory=lambda: _env_bool("ANONPROXY_EPHEMERAL", False))
 
+    # Encrypt the vault at rest (AES-GCM whole-file envelope next to where the
+    # plaintext sqlite would live). Passphrase or keyfile — either enables it.
+    # Needs the optional crypto extra: pip install 'anonproxy[vault-crypto]'.
+    vault_passphrase: str = field(
+        default_factory=lambda: os.environ.get("ANONPROXY_VAULT_PASSPHRASE", "")
+    )
+    vault_keyfile: str = field(
+        default_factory=lambda: os.environ.get("ANONPROXY_VAULT_KEYFILE", "")
+    )
+
     # --- Detection -----------------------------------------------------------
     # Ordered backend chain. "regex" is the deterministic floor; the rest are
     # contextual. Out-of-box default needs no extra dependencies. Colleagues who

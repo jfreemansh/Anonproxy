@@ -32,7 +32,9 @@ if [ -n "${RUNTIME_DIR:-}" ]; then
     mkdir -p "$APP/Contents/Frameworks"
     cp -R "$RUNTIME_DIR" "$APP/Contents/Frameworks/python"
     PYBIN="$APP/Contents/Frameworks/python/bin/python3"
-    "$PYBIN" -m pip install --quiet --no-input -r "$ROOT/requirements.txt"
+    # verbose + hard timeouts: silent pip == un diagnosable CI hangs
+    "$PYBIN" -m pip install --no-input --timeout 60 --retries 5 \
+        -r "$ROOT/requirements.txt"
     find "$APP/Contents/Frameworks/python" -name __pycache__ -type d \
         -exec rm -rf {} + 2>/dev/null || true
     rm -rf "$APP/Contents/Frameworks/python/lib"/python3*/test \

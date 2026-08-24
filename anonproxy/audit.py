@@ -128,6 +128,7 @@ async function load() {
 function renderStats(s) {
   const el = document.getElementById("stats");
   const parts = [`<span class="pill">total: <b>${s.total||0}</b></span>`];
+  if (s.encrypted) parts.push(`<span class="pill">🔒 vault encrypted</span>`);
   // entity types can originate from LLM output parsed out of hostile client
   // traffic — never interpolate them into innerHTML unescaped
   for (const [k, v] of Object.entries(s.by_type || {}))

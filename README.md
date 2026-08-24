@@ -318,7 +318,9 @@ a session.
 4. At session close, `python -m anonproxy export --engagement acme-2026` (or the
    audit page's CSV export) dumps the full `original → surrogate` map for your
    evidence/audit trail, then archive or delete the vault. Use
-   `ANONPROXY_EPHEMERAL=1` for in-memory-only (no disk persistence).
+   `ANONPROXY_EPHEMERAL=1` for in-memory-only (no disk persistence), or set
+   `ANONPROXY_VAULT_PASSPHRASE` to keep an AES-GCM-encrypted vault at rest
+   instead of plaintext sqlite.
 
 ## Configuration
 
@@ -337,6 +339,7 @@ a session.
 | `ANONYMIZER_SLM_MODEL` | `anonymizer-slm` | Ollama name of the imported Anonymizer SLM. |
 | `ANONPROXY_TOLERANT` | `true` | Tolerant restoration (vs. exact). |
 | `ANONPROXY_EPHEMERAL` | `false` | In-memory vault, nothing on disk. |
+| `ANONPROXY_VAULT_PASSPHRASE` / `_KEYFILE` | *(empty)* | Encrypt the vault at rest (AES-GCM envelope; either var enables it). Requires `pip install 'anonproxy[vault-crypto]'`. Wrong passphrase fails cleanly; existing plaintext vaults are adopted (encrypted) on first write. |
 | `ANONPROXY_AUDIT` | `true` | Serve the `/audit` dashboard. |
 | `ANONPROXY_PROFILE_DIR` | `~/.anonproxy/profiles` | Where engagement profiles (one JSON each) live. |
 | `ANONPROXY_EXPORTS_DIR` | `~/.anonproxy/exports` | Close-out evidence output root. |

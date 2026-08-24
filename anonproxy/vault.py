@@ -23,9 +23,13 @@ lookup/analysis but is no longer the identity key.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
+import os
+import secrets
 import sqlite3
 import threading
+from pathlib import Path
 from typing import Callable, Optional
 
 from .config import Settings
@@ -33,12 +37,63 @@ from . import surrogates
 
 log = logging.getLogger("anonproxy.vault")
 
+# --- at-rest encryption (opt-in) --------------------------------------------
+# Whole-file AES-GCM envelope next to where the plaintext sqlite would live.
+# The DB runs from a private temp file while the process is up; every commit
+# re-seals the envelope. Format: ANPENC1 | salt(16) | nonce(12) | ciphertext.
+try:
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+except ImportError:          # only needed when a passphrase is actually set
+    AESGCM = None
+
+_ENC_MAGIC = b"ANPENC1"
+_SALT_LEN = 16
+_NONCE_LEN = 12
+_KDF_ITERS = 600_000
+
+
+def _derive_key(passphrase: bytes, salt: bytes) -> bytes:
+    return hashlib.pbkdf2_hmac("sha256", passphrase, salt, _KDF_ITERS)
+
 
 class Vault:
     def __init__(self, settings: Settings):
         self.settings = settings
         self._lock = threading.RLock()
-        if settings.ephemeral:
+        self._enc_key: Optional[bytes] = None
+        self._enc_path: Optional[str] = None
+        self._tmp_path: Optional[Path] = None
+
+        passphrase = settings.vault_passphrase or ""
+        if settings.vault_keyfile:
+            kf = Path(settings.vault_keyfile)
+            passphrase = kf.read_text().splitlines()[0].strip()
+        if passphrase:
+            if AESGCM is None:
+                raise RuntimeError(
+                    "vault encryption requires the 'cryptography' package — "
+                    "install it with: pip install 'anonproxy[vault-crypto]'")
+            safe = "".join(c if c.isalnum() or c in "-_." else "_"
+                           for c in settings.engagement_id)
+            self._enc_path = str(settings.vault_path()) + ".enc"
+            self._tmp_path = settings.vault_dir / f".{safe}.plain.sqlite"
+            # one salt per envelope, chosen once (file's salt if present)
+            enc_exists = os.path.exists(self._enc_path)
+            self._salt = self._read_envelope_salt() if enc_exists \
+                else secrets.token_bytes(_SALT_LEN)
+            self._passphrase = passphrase.encode()
+            self._enc_key = _derive_key(self._passphrase, self._salt)
+            if enc_exists:
+                self._unseal_to(self._tmp_path)
+            elif settings.vault_path().exists():
+                # adopt an existing plaintext vault: next persist encrypts it
+                log.info("adopting plaintext vault %r — will be encrypted "
+                         "on next write", settings.engagement_id)
+                import shutil
+                shutil.copyfile(settings.vault_path(), self._tmp_path)
+                os.chmod(self._tmp_path, 0o600)
+            self._conn = sqlite3.connect(str(self._tmp_path), check_same_thread=False)
+        elif settings.ephemeral:
             self._conn = sqlite3.connect(":memory:", check_same_thread=False)
         else:
             self._conn = sqlite3.connect(str(settings.vault_path()), check_same_thread=False)
@@ -53,6 +108,50 @@ class Vault:
         self._fwd: dict[str, str] = {}     # normalized original -> surrogate
         self._rev: dict[str, str] = {}     # surrogate -> original
         self._load_cache()
+
+    @staticmethod
+    def _safe_name() -> str:
+        s = Settings()
+        safe = "".join(c if c.isalnum() or c in "-_." else "_"
+                       for c in s.engagement_id)
+        return safe
+
+    def _read_envelope_salt(self) -> bytes:
+        enc = str(self.settings.vault_path()) + ".enc"
+        with open(enc, "rb") as fh:
+            if fh.read(len(_ENC_MAGIC)) != _ENC_MAGIC:
+                raise RuntimeError(f"{enc} is not an anonproxy encrypted vault")
+            return fh.read(_SALT_LEN)
+
+    def _seal(self) -> None:
+        """Re-encrypt the temp DB into the envelope (atomic replace)."""
+        assert self._enc_key and self._enc_path and self._tmp_path
+        with open(self._tmp_path, "rb") as fh:
+            plaintext = fh.read()
+        nonce = secrets.token_bytes(_NONCE_LEN)
+        ct = AESGCM(self._enc_key).encrypt(nonce, plaintext, None)
+        tmp_enc = self._enc_path + ".tmp"
+        with open(tmp_enc, "wb") as fh:
+            fh.write(_ENC_MAGIC + self._salt + nonce + ct)
+        os.chmod(tmp_enc, 0o600)
+        os.replace(tmp_enc, self._enc_path)
+
+    def _unseal_to(self, dest: Path) -> None:
+        assert self._enc_key and self._enc_path
+        with open(self._enc_path, "rb") as fh:
+            blob = fh.read()
+        header = len(_ENC_MAGIC) + _SALT_LEN + _NONCE_LEN
+        try:
+            plaintext = AESGCM(self._enc_key).decrypt(
+                blob[len(_ENC_MAGIC) + _SALT_LEN:len(_ENC_MAGIC) + _SALT_LEN + _NONCE_LEN],
+                blob[header:], None)
+        except Exception as e:
+            raise RuntimeError(
+                f"wrong ANONPROXY_VAULT_PASSPHRASE for engagement "
+                f"{self.settings.engagement_id!r} (decryption failed)") from e
+        with open(dest, "wb") as fh:
+            fh.write(plaintext)
+        os.chmod(dest, 0o600)
 
     def _init_schema(self) -> None:
         self._conn.execute(
@@ -112,6 +211,8 @@ class Vault:
                 (original, norm, entity_type, surrogate),
             )
             self._conn.commit()
+            if self._enc_key:
+                self._seal()
             self._fwd[original] = surrogate
             self._rev[surrogate] = original
             return surrogate, True
@@ -149,7 +250,8 @@ class Vault:
             for (etype,) in self._conn.execute("SELECT entity_type FROM mappings"):
                 by_type[etype] = by_type.get(etype, 0) + 1
             return {"total": len(self._rev), "by_type": by_type,
-                    "engagement": self.settings.engagement_id}
+                    "engagement": self.settings.engagement_id,
+                    "encrypted": bool(self._enc_key)}
 
     def export(self) -> list[dict]:
         with self._lock:
@@ -162,4 +264,14 @@ class Vault:
 
     def close(self) -> None:
         with self._lock:
+            if self._enc_key:
+                try:
+                    self._seal()
+                except Exception:      # best effort on shutdown
+                    log.exception("final vault seal failed")
             self._conn.close()
+            if self._tmp_path and self._tmp_path.exists():
+                try:
+                    os.unlink(self._tmp_path)
+                except OSError:
+                    pass

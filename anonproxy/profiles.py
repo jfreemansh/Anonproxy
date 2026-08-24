@@ -122,7 +122,7 @@ def close_engagement(settings: Settings, keep_vault: bool = False,
     vault_removed = False
     if not keep_vault and not settings.ephemeral:
         vp = settings.vault_path()
-        for suffix in ("", "-wal", "-shm"):
+        for suffix in ("", "-wal", "-shm", ".enc"):
             p = Path(str(vp) + suffix)
             try:
                 p.unlink()
