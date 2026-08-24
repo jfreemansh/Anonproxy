@@ -16,11 +16,15 @@ let ICON_OFF = "🛡️○"
 
 // MARK: - helpers
 
-func sh(_ args: [String], cwd: URL, timeout: TimeInterval = 180) -> (Int32, String) {
+func sh(_ args: [String], cwd: URL, timeout: TimeInterval = 180,
+        extraEnv: [String: String]? = nil) -> (Int32, String) {
     let p = Process()
-    p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-    p.arguments = args
+    p.executableURL = URL(fileURLWithPath: args[0].hasPrefix("/") ? args[0] : "/usr/bin/env")
+    p.arguments = args[0].hasPrefix("/") ? Array(args.dropFirst()) : args
     p.currentDirectoryURL = cwd
+    var env = ProcessInfo.processInfo.environment
+    if let e = extraEnv { env.merge(e) { _, new in new } }
+    p.environment = env
     let pipe = Pipe()
     p.standardOutput = pipe
     p.standardError = pipe
@@ -30,6 +34,10 @@ func sh(_ args: [String], cwd: URL, timeout: TimeInterval = 180) -> (Int32, Stri
     if p.isRunning { p.terminate(); return (-1, "timed out") }
     let data = pipe.fileHandleForReading.readDataToEndOfFile()
     return (p.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+}
+
+func isExec(_ path: String) -> Bool {
+    FileManager.default.isExecutableFile(atPath: path)
 }
 
 func tcpOpen(_ port: Int) -> Bool {
@@ -113,8 +121,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .deletingLastPathComponent()      // scripts/
             .deletingLastPathComponent()      // repo/
     }()
-    lazy var pythonBin: String =
-        ProcessInfo.processInfo.environment["PYTHON_BIN"] ?? "python3"
+    // GUI-launched apps get a bare PATH (no pyenv/homebrew shims), so hunt for
+    // a real interpreter ourselves; require >= 3.10 like the project does.
+    lazy var pythonBin: String = {
+        if let e = ProcessInfo.processInfo.environment["PYTHON_BIN"], isExec(e) {
+            return e
+        }
+        let nsHome = NSHomeDirectory()
+        let candidates = [
+            nsHome + "/.pyenv/shims/python3",
+            "/opt/homebrew/bin/python3",
+            "/usr/local/bin/python3",
+            "/usr/bin/python3",
+        ]
+        for c in candidates where isExec(c) {
+            let r = sh([c, "-V"], cwd: home, timeout: 10)
+            if r.0 == 0, let minor = r.1.split(separator: ".").dropFirst().first,
+               Int(minor.prefix(while: { $0.isNumber })) ?? 0 >= 10 {
+                return c
+            }
+        }
+        return "python3"   // last resort: PATH lookup
+    }()
     lazy var anonDir: URL =
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".anonproxy")
     lazy var profilesDir: URL = anonDir.appendingPathComponent("profiles")
@@ -161,13 +189,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func cliAsync(_ sub: [String], done: @escaping (Int32, String) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
-            let r = sh([self.pythonBin, "-m", "anonproxy"] + sub, cwd: self.home)
+            let r = self.cliSync(sub)
             done(r.0, r.1)
         }
     }
 
     func cliSync(_ sub: [String]) -> (Int32, String) {
-        sh([pythonBin, "-m", "anonproxy"] + sub, cwd: home)
+        // PYTHONPATH pins `import anonproxy` to this repo regardless of cwd
+        let r = sh([pythonBin, "-m", "anonproxy"] + sub, cwd: home,
+                   extraEnv: ["PYTHONPATH": home.path])
+        if r.0 != 0 {
+            return (r.0, r.1 +
+                "\n---\npython: \(pythonBin)\ncwd: \(home.path)")
+        }
+        return r
     }
 
     func profiles() -> [Profile] { loadProfiles(profilesDir) }
@@ -205,10 +240,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         FileManager.default.createFile(atPath: logPath, contents: nil)
         let logf = FileHandle(forWritingAtPath: logPath)
 
+        var childEnv = ProcessInfo.processInfo.environment
+        childEnv["PYTHONPATH"] = home.path
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        p.arguments = [pythonBin, "-m", "anonproxy", "up", name]
+        p.executableURL = URL(fileURLWithPath: pythonBin.hasPrefix("/")
+                              ? pythonBin : "/usr/bin/env")
+        p.arguments = pythonBin.hasPrefix("/")
+                      ? ["-m", "anonproxy", "up", name]
+                      : ["python3", "-m", "anonproxy", "up", name]
         p.currentDirectoryURL = home
+        p.environment = childEnv
         p.standardOutput = logf
         p.standardError = logf
         do { try p.run() } catch {
