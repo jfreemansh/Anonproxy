@@ -77,15 +77,28 @@ async def anthropic_stream(engine, aiter_bytes) -> AsyncIterator[str]:
         return ""
 
     try:
+        pending_event: str | None = None   # passthrough "event:" line, held so
+        # an injected tail can be emitted BEFORE its event block (SSE blocks
+        # run to the blank line — emitting a tail after the event: line would
+        # fuse it into that block and get both dropped by the client).
         async for line in _lines(aiter_bytes):
             if not line.startswith("data:"):
                 # event: / blank / comment lines pass through verbatim
+                if line.startswith("event:"):
+                    pending_event = line + "\n"
+                    continue
+                if pending_event is not None:
+                    yield pending_event
+                    pending_event = None
                 yield line + "\n"
                 continue
             raw = line[len("data:"):].strip()
             try:
                 obj = json.loads(raw)
             except json.JSONDecodeError:
+                if pending_event is not None:
+                    yield pending_event
+                    pending_event = None
                 yield line + "\n"
                 continue
 
@@ -105,6 +118,9 @@ async def anthropic_stream(engine, aiter_bytes) -> AsyncIterator[str]:
                 sr, _ = entry
                 fragment = obj["delta"].get(field, "")
                 obj["delta"][field] = sr.push(fragment)
+                if pending_event is not None:
+                    yield pending_event
+                    pending_event = None
                 yield f"data: {json.dumps(obj)}\n\n"
                 if dtype == "input_json_delta":
                     # The moment the accumulated arguments form complete JSON,
@@ -125,11 +141,19 @@ async def anthropic_stream(engine, aiter_bytes) -> AsyncIterator[str]:
                 idx = obj.get("index", 0)
                 tail_event = _emit_tail(idx)
                 if tail_event:
-                    yield tail_event
+                    yield tail_event          # BEFORE the stop block — never fused into it
+                if pending_event is not None:
+                    yield pending_event
+                    pending_event = None
                 yield f"data: {json.dumps(obj)}\n\n"
             else:
+                if pending_event is not None:
+                    yield pending_event
+                    pending_event = None
                 yield f"data: {json.dumps(obj)}\n\n"
     finally:
+        if pending_event is not None:
+            yield pending_event
         # Stream ended without closing events (429/overload, cut connection):
         # flush whatever is still held so the client receives the tail.
         for idx in list(restorers):

@@ -154,3 +154,47 @@ def test_complete_json_flushes_without_closing_events():
                 partial += obj["delta"].get("partial_json", "")
     parsed = json.loads(partial)     # MUST be complete and valid
     assert parsed["command"] == "cat dc01.acmecorp.local"
+
+
+def test_tail_event_never_fuses_into_stop_sse_block():
+    """SSE blocks run to the blank line: an event emitted after the raw
+    `event: content_block_stop` line but before its data line fuses tail +
+    stop into ONE block (multiple data lines concatenate; the last event:
+    wins) — clients drop the malformed event and lose both the text tail
+    and the block close. The tail must be emitted BEFORE the stop's
+    event: line, and each event must be blank-line separated."""
+    engine = _engine_with_host()
+    surr = engine.vault.surrogate_for("dc01.acmecorp.local")
+    text = f"Answer mentioning {surr} and more text to hold back."
+    events = [
+        'event: message_start\ndata: {"type":"message_start"}\n\n',
+        'data: {"type":"content_block_start","index":0,'
+        '"content_block":{"type":"text","text":""}}\n\n',
+        'data: ' + json.dumps({"type": "content_block_delta", "index": 0,
+                               "delta": {"type": "text_delta",
+                                         "text": text}}) + '\n\n',
+        'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+        'event: message_delta\ndata: {"type":"message_delta","delta":'
+        '{"stop_reason":"end_turn"}}\n\n',
+        'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+    ]
+    collected = asyncio_run_collect(engine, events)
+
+    # every event must be a well-formed block: event:/data lines then blank
+    blocks = [b for b in collected.split("\n\n") if b.strip()]
+    assert blocks, "no SSE blocks emitted"
+    for b in blocks:
+        lines_ = b.split("\n")
+        data_lines = [x for x in lines_ if x.startswith("data:")]
+        assert len(data_lines) <= 1, f"fused SSE block: {b!r}"
+        if data_lines:
+            json.loads(data_lines[0][5:])   # every data line is valid JSON
+    # the tail text must appear in a block that is NOT the stop block
+    restored = "dc01.acmecorp.local"
+    tail_blocks = [b for b in blocks if restored in b]
+    assert tail_blocks, "held-back tail text never emitted"
+    assert "content_block_stop" not in tail_blocks[0], "tail fused into stop block"
+    # stop block intact and after the tail
+    stop_idx = next(i for i, b in enumerate(blocks) if "content_block_stop" in b)
+    tail_idx = blocks.index(tail_blocks[0])
+    assert tail_idx < stop_idx
