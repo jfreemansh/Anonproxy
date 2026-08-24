@@ -153,4 +153,4 @@ def test_complete_json_flushes_without_closing_events():
             if obj.get("type") == "content_block_delta":
                 partial += obj["delta"].get("partial_json", "")
     parsed = json.loads(partial)     # MUST be complete and valid
-    assert parsed["command"] == f"cat dc01.acmecorp.local"
+    assert parsed["command"] == "cat dc01.acmecorp.local"
