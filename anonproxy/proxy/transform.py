@@ -86,6 +86,22 @@ def anonymize_anthropic_request(engine, body: dict) -> dict:
     return body
 
 
+def anonymize_gemini_request(engine, body):
+    """Google generativelanguage shape: redact only parts[].text leaves so
+    roles, model names and tool schemas' structure stay intact."""
+    return _anon_gemini_value(engine, body)
+
+
+def _anon_gemini_value(engine, val):
+    if isinstance(val, list):
+        return [_anon_gemini_value(engine, v) for v in val]
+    if isinstance(val, dict):
+        return {k: (_anon_str(engine, v) if k == "text" and isinstance(v, str)
+                    else _anon_gemini_value(engine, v))
+                for k, v in val.items()}
+    return val
+
+
 def anonymize_openai_request(engine, body: dict) -> dict:
     body = dict(body)
     if isinstance(body.get("messages"), list):

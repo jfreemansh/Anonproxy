@@ -135,6 +135,10 @@ class Settings:
     openai_upstream: str = field(
         default_factory=lambda: os.environ.get("OPENAI_UPSTREAM", "https://api.openai.com")
     )
+    google_upstream: str = field(
+        default_factory=lambda: os.environ.get(
+            "GOOGLE_UPSTREAM", "https://generativelanguage.googleapis.com")
+    )
     # Local engine HTTP API the Burp extension talks to (anonymize/deanonymize).
     engine_api_token: str = field(
         default_factory=lambda: os.environ.get("ANONPROXY_API_TOKEN", "")

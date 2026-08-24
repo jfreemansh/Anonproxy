@@ -303,6 +303,17 @@ What just happened:
 
 The same works for OpenAI-style clients — just call
 `http://127.0.0.1:8099/v1/chat/completions` with your usual OpenAI payload.
+And for **Google Gemini** (REST shape is handled natively, including
+`countTokens`; auth headers/query keys pass through untouched):
+
+```bash
+curl -s "http://127.0.0.1:8099/v1beta/models/gemini-2.5-flash:generateContent?key=$GEMINI_API_KEY" \
+  -H 'content-type: application/json' \
+  -d '{"contents":[{"role":"user","parts":[{"text":"Analyse this scan:\n'"$SCAN"'"}]}]}'
+```
+
+Upstream defaults to `generativelanguage.googleapis.com` (override with
+`GOOGLE_UPSTREAM`).
 
 ## Audit dashboard
 
@@ -532,7 +543,7 @@ rather than staying green while quietly returning zero detections.
 ## Tests
 
 ```bash
-python3 -m pytest -q                    # 129 tests: round-trip, streaming, proxy, audit, verify, detectors, tool-calls, vault, profiles, llm_detector, webapp, scope, config, polish
+python3 -m pytest -q                    # 132 tests: round-trip, streaming, proxy, audit, verify, detectors, tool-calls, vault, profiles, llm_detector, webapp, scope, config, polish
 python3 scripts/benchmark_roundtrip.py  # naive vs tolerant pass-rate table
 ```
 

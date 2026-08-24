@@ -25,6 +25,7 @@ import asyncio
 import hmac
 import json
 import logging
+import re
 from contextlib import asynccontextmanager
 
 import httpx
@@ -250,6 +251,68 @@ def create_app(settings: Settings | None = None,
     @app.post("/v1/messages")
     async def anthropic_messages(request: Request):
         return await _proxy(request, settings.anthropic_upstream, "anthropic")
+
+    _GEMINI_RE = re.compile(
+        r"^v1beta/(?:models/)?[^:/]+:(generateContent|streamGenerateContent|countTokens)$")
+
+    async def _proxy_gemini(request: Request, gemini_path: str):
+        match = _GEMINI_RE.match(f"v1beta/{gemini_path}")
+        if not match:
+            raise HTTPException(status_code=404,
+                                detail=f"unsupported Gemini action: {gemini_path}")
+        eng = get_engine(None)
+        raw = await request.body()
+        try:
+            body = json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            body = None
+            if raw:
+                if settings.strict_mode:
+                    raise HTTPException(
+                        status_code=502,
+                        detail="anonproxy strict mode: request body is not valid "
+                               "JSON, refusing to forward it unanonymized",
+                    ) from None
+                log.warning("gemini body not valid JSON (%d bytes) — forwarding "
+                            "unanonymized", len(raw))
+        if body is not None:
+            body = await asyncio.to_thread(transform.anonymize_gemini_request, eng, body)
+            out_bytes = json.dumps(body).encode()
+        else:
+            out_bytes = raw
+
+        url = settings.google_upstream.rstrip("/") + "/v1beta/" + gemini_path
+        resp = await client.post(url, headers=fwd_headers(request),
+                                 content=out_bytes, params=request.url.query)
+        ct = resp.headers.get("content-type", "")
+        if resp.status_code >= 400:
+            return Response(content=resp.content, status_code=resp.status_code,
+                            media_type=ct or "application/json")
+        if "event-stream" in ct:
+            async def gemini_sse():
+                async for line in streaming._lines(resp.aiter_bytes()):
+                    if line.startswith("data:"):
+                        try:
+                            obj = json.loads(line[5:].strip())
+                            obj = transform.deanonymize_json(eng, obj)
+                            yield f"data: {json.dumps(obj)}\n\n"
+                            continue
+                        except json.JSONDecodeError:
+                            pass
+                    yield line + "\n"
+            return StreamingResponse(gemini_sse(), media_type="text/event-stream",
+                                     status_code=resp.status_code)
+        if "application/json" in ct:
+            data = await asyncio.to_thread(transform.deanonymize_json,
+                                           eng, resp.json())
+            return JSONResponse(content=data, status_code=resp.status_code)
+        text = await asyncio.to_thread(eng.deanonymize, resp.text)
+        return Response(content=text, status_code=resp.status_code,
+                        media_type=ct or "text/plain")
+
+    @app.post("/v1beta/{gemini_path:path}")
+    async def gemini_proxy(request: Request, gemini_path: str):
+        return await _proxy_gemini(request, gemini_path)
 
     @app.post("/v1/messages/count_tokens")
     async def anthropic_count_tokens(request: Request):
