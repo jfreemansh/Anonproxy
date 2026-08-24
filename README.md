@@ -232,19 +232,23 @@ scripts/anon close acme-web            # export JSON+CSV evidence + wipe vault
 `~/.anonproxy/profiles/`; `ANONPROXY_PROFILE_DIR` overrides). `up <profile>`
 without `--daemon` behaves like `serve` with the profile applied.
 
-On macOS there's also a **native status-bar app** (AppKit — no Python UI deps,
-no app bundle required): pick an engagement, Start/Stop, ＋ **New engagement…**
-(a real form: name, scope terms, port, notes, ephemeral toggle), copy client
-env, open `/audit`, run `verify`, and one-click **Export & archive vault…**
-close-out.
+On macOS there's also a **native status-bar app** — pick an engagement,
+Start/Stop, ＋ **New engagement…** (a real form: name, scope terms, port,
+notes, ephemeral toggle), copy client env, open `/audit`, run `verify`, and
+one-click **Export & archive vault…** close-out. Prebuilt `Anonbar-arm64.zip`
+and `Anonbar-x86_64.zip` (Python runtime and dependencies *embedded* — the
+machine needs nothing installed) live on the
+[Releases](../../releases) page; see [Quick start A](#a-macos-app-recommended).
+
+Build it yourself instead:
 
 ```bash
-scripts/install_anonbar.sh      # one-time: builds + installs /Applications/Anonbar.app
+scripts/install_anonbar.sh      # builds + installs /Applications/Anonbar.app
 open -a Anonbar                 # or Spotlight: ⌘Space → "Anonbar"
 ```
 
-Rebuild/reinstall only when `anonbar.swift` itself changes. For auto-start at
-login: System Settings → General → Login Items → add Anonbar.
+Rebuild/reinstall when `anonbar.swift` changes. Auto-start at login:
+System Settings → General → Login Items → add Anonbar.
 
 It shells out to the same CLI, so profiles created in either place just show
 up in the other. Env overrides: `ANONPROXY_HOME`, `PYTHON_BIN`.
@@ -513,7 +517,7 @@ rather than staying green while quietly returning zero detections.
 ## Tests
 
 ```bash
-python3 -m pytest -q                    # 120 tests: round-trip, streaming, proxy, audit, verify, detectors, tool-calls, vault, profiles, llm_detector, webapp, scope, config, polish
+python3 -m pytest -q                    # 124 tests: round-trip, streaming, proxy, audit, verify, detectors, tool-calls, vault, profiles, llm_detector, webapp, scope, config, polish
 python3 scripts/benchmark_roundtrip.py  # naive vs tolerant pass-rate table
 ```
 
@@ -559,6 +563,14 @@ invalidation, so don't run it behind multiple workers (`serve` always starts
 one). It is not a substitute for reading what your NDA and engagement contract
 allow before using any cloud AI on client data. Verify coverage per engagement
 with the `/audit` page, `export`, and the test suite.
+
+## Releases & CI
+
+Pushing a tag (`vX.Y.Z`) triggers two GitHub Actions workflows:
+`Anonbar-arm64.zip` + `Anonbar-x86_64.zip` (self-contained apps with the
+Python runtime embedded) are attached to the release, and matching sdist +
+wheel are published to [PyPI](https://pypi.org/project/anonproxy/) via
+trusted publishing.
 
 ## License
 
