@@ -21,16 +21,28 @@ jobs:
       - name: Wheel must carry every base dependency
         run: |
           python - <<'PY'
-          import zipfile, glob, re
+          import glob, tomllib, zipfile
           whl = glob.glob("dist/*.whl")[0]
           meta = zipfile.ZipFile(whl).read(
               [n for n in zipfile.ZipFile(whl).namelist() if n.endswith("METADATA")][0]
           ).decode()
-          reqs = [l.split("Requires-Dist: ")[1].split(";")[0].split("[")[0].strip()
-                  for l in meta.splitlines() if l.startswith("Requires-Dist:")]
-          names = {r.lower() for r in reqs}
-          assert {"fastapi", "uvicorn", "httpx", "cryptography"} <= names, names
-          print("wheel deps:", sorted(names))
+
+          def norm(req):
+              for i, ch in enumerate(req):
+                  if ch in "<>=!~;[ ":
+                      return req[:i].strip().lower()
+              return req.strip().lower()
+
+          # base deps only — extras (dev/torch/ruff) are optional by design
+          wheel_names = {norm(l.split("Requires-Dist: ")[1])
+                         for l in meta.splitlines()
+                         if l.startswith("Requires-Dist:")
+                         and "extra ==" not in l}
+          py = tomllib.load(open("pyproject.toml", "rb"))
+          required = {norm(d) for d in py["project"]["dependencies"]}
+          missing = required - wheel_names
+          assert not missing, f"wheel missing base deps: {sorted(missing)}"
+          print("wheel carries all", len(required), "base deps")
           PY
       - name: Publish
         uses: pypa/gh-action-pypi-publish@release/v1

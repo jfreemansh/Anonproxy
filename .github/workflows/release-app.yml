@@ -60,17 +60,19 @@ jobs:
 
       - name: Zip + checksum
         run: |
-          # 'x86_64' alone gets misread as Windows; spell out macOS + Intel
+          # 'x86_64' alone gets misread as Windows; spell out macOS + Intel.
+          # App dir name varies by arch (Anonbar.app vs Anonbar-x86_64.app).
           NAME="Anonbar-macos-${{ matrix.arch == 'arm64' && 'arm64' || 'intel' }}"
           cd build
-          ditto -c -k --keepParent Anonbar.app "$NAME.zip"
+          APP="$(ls -d Anonbar*.app | head -1)"
+          ditto -c -k --keepParent "$APP" "$NAME.zip"
           shasum -a 256 "$NAME.zip" > "$NAME.zip.sha256"
           echo "ZIPNAME=$NAME" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ZIPNAME }}
-          path: build/Anonbar-*
+          path: build/${{ env.ZIPNAME }}*
 
   burp-extension:
     runs-on: ubuntu-latest
