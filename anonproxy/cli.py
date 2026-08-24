@@ -303,12 +303,87 @@ def _print_banner(settings) -> None:
           f"{settings.host}:{settings.port}/v1", file=sys.stderr)
 
 
+def _looks_like_anonproxy_engine(host: str, port: int) -> bool:
+    """True when something answering on {host}:{port} fingerprints as our
+    own engine (the /anonproxy/health payload carries `engagement`)."""
+    import json
+    import urllib.request
+    try:
+        with urllib.request.urlopen(
+                f"http://{host}:{port}/anonproxy/health", timeout=2.0) as r:
+            return "engagement" in json.load(r)
+    except Exception:
+        return False
+
+
+def _preempt_stale_engine(settings) -> None:
+    """Self-heal a crashed-parent orphan: if the port we want is held by a
+    process that fingerprints as an anonproxy engine, kill it and take over,
+    instead of failing Start with 'address already in use' forever."""
+    import socket
+    import time as _time
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            s.bind((settings.host, settings.port))
+            return                      # port free — nothing to do
+        except OSError:
+            pass
+    if not _looks_like_anonproxy_engine(settings.host, settings.port):
+        return                          # foreign service — fail normally
+    import signal
+    import subprocess
+    # -sTCP:LISTEN matters: without it lsof also lists this process's own
+    # just-closed health-probe socket in TIME_WAIT, and we SIGKILL ourselves.
+    pids = subprocess.run(
+        ["lsof", "-ti", f"tcp:{settings.port}", "-sTCP:LISTEN"],
+        capture_output=True, text=True).stdout.split()
+    for pid in pids:
+        try:
+            if int(pid) == os.getpid():
+                continue            # belt and braces — never self-kill
+            os.kill(int(pid), signal.SIGKILL)
+        except (ValueError, ProcessLookupError, PermissionError):
+            pass
+    for _ in range(30):                 # up to ~3s for the kernel to release
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind((settings.host, settings.port))
+                print(f"preempted stale engine on port {settings.port}")
+                return
+            except OSError:
+                pass
+        _time.sleep(0.1)
+
+
 def _serve(settings) -> None:
+    import threading
+
     import uvicorn
 
     from .proxy.app import create_app
-    uvicorn.run(create_app(settings), host=settings.host,
-                port=settings.port, log_level="info")
+
+    # Graceful shutdown waits on open connections — a hung client stream
+    # would keep us alive forever. If the menubar dies mid-shutdown there
+    # is nobody left to escalate to SIGKILL and we become an orphan
+    # squatting on the port, so the child enforces its own deadline.
+    # (Patching handle_exit rather than installing signal handlers:
+    # uvicorn's run() replaces signal handlers itself.)
+    _SHUTDOWN_DEADLINE = 8.0
+    config = uvicorn.Config(create_app(settings), host=settings.host,
+                            port=settings.port, log_level="info")
+    server = uvicorn.Server(config)
+    original_handle_exit = server.handle_exit
+
+    def handle_exit(sig, frame):
+        fuse = threading.Timer(_SHUTDOWN_DEADLINE, os._exit, args=(1,))
+        fuse.daemon = True              # never block a clean exit
+        fuse.start()
+        original_handle_exit(sig, frame)
+
+    server.handle_exit = handle_exit
+    _preempt_stale_engine(settings)
+    server.run()
 
 
 def _run_dir() -> Path:
