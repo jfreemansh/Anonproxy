@@ -152,12 +152,48 @@ Then point your client at it:
 
 ```bash
 # Claude Code
-export ANTHROPIC_BASE_URL=http://127.0.0.1:8080
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8099
 claude
 
 # OpenAI SDK / OpenRouter
-#   base_url = "http://127.0.0.1:8080/v1"
+#   base_url = "http://127.0.0.1:8099/v1"
 ```
+
+### Fast workflow: profiles (`scripts/anon`, macOS menubar)
+
+> **The proxy listens on 8099, not 8080** — Burp's upstream proxy owns 8080,
+> and this tool ships a Burp extension that talks to a *running* Anonproxy.
+> Keeping the two apart means both are up at once with zero configuration.
+
+One JSON profile per client/test carries the whole context — engagement id
+(→ vault isolation), scope seed, detector chain, model, port. Spin-up between
+tests is one command instead of re-typed flags:
+
+```bash
+scripts/anon profile new acme-web --scope "acme.com,portal.acme.com,DC01" --notes "web app test"
+scripts/anon up acme-web --daemon      # detached; logs under ~/.anonproxy/logs/
+scripts/anon env acme-web --copy       # client export lines → clipboard
+scripts/anon stop                      # reap the daemon
+scripts/anon close acme-web            # export JSON+CSV evidence + wipe vault
+```
+
+`profile list|show|edit|rm` round it out (profiles live in
+`~/.anonproxy/profiles/`; `ANONPROXY_PROFILE_DIR` overrides). `up <profile>`
+without `--daemon` behaves like `serve` with the profile applied.
+
+On macOS there's also a menubar app for point-and-go: pick an engagement,
+Start/Stop, ＋ **New engagement…** (asks name + scope terms, fills in the rest),
+copy client env, open `/audit`, run `verify`, and one-click **Export &
+archive vault…** close-out.
+
+```bash
+pip install -r requirements.txt && pip install rumps   # or: pip install 'anonproxy[menu]'
+python3 scripts/anonproxy_menubar.py
+```
+
+> Ephemeral profiles (`--ephemeral`) leave nothing on disk — but that also
+> means a close-out *after* stopping finds no mappings. Run close-out while
+> the proxy still holds them, or keep persistence on when evidence matters.
 
 Quick offline check without a client:
 
@@ -178,7 +214,7 @@ python -m anonproxy serve --engagement acme-2026 &
 # 2. run a tool, then ask Claude about it THROUGH the proxy
 SCAN=$(nmap -sV dc01.acmecorp.local)
 
-curl -s http://127.0.0.1:8080/v1/messages \
+curl -s http://127.0.0.1:8099/v1/messages \
   -H "x-api-key: $ANTHROPIC_API_KEY" \
   -H "anthropic-version: 2023-06-01" \
   -H "content-type: application/json" \
@@ -195,14 +231,14 @@ What just happened:
   `host-ab12cd9.pentest.local`, never `10.20.0.10` or `dc01.acmecorp.local`.
 - **Your reply has the real values back** — even if the model wrote them in bold
   or changed their case.
-- Open `http://127.0.0.1:8080/audit` to see exactly what was swapped.
+- Open `http://127.0.0.1:8099/audit` to see exactly what was swapped.
 
 The same works for OpenAI-style clients — just call
-`http://127.0.0.1:8080/v1/chat/completions` with your usual OpenAI payload.
+`http://127.0.0.1:8099/v1/chat/completions` with your usual OpenAI payload.
 
 ## Audit dashboard
 
-Open `http://127.0.0.1:8080/audit` (or `python -m anonproxy audit`) to review
+Open `http://127.0.0.1:8099/audit` (or `python -m anonproxy audit`) to review
 every `original → surrogate` mapping live during an engagement — filterable by
 type, with counts and CSV export. It binds to localhost and honours
 `ANONPROXY_API_TOKEN` if set; disable it with `ANONPROXY_AUDIT=false`. It exposes
@@ -244,7 +280,9 @@ a session.
 | `ANONPROXY_TOLERANT` | `true` | Tolerant restoration (vs. exact). |
 | `ANONPROXY_EPHEMERAL` | `false` | In-memory vault, nothing on disk. |
 | `ANONPROXY_AUDIT` | `true` | Serve the `/audit` dashboard. |
-| `PORT` / `HOST` | `8080` / `127.0.0.1` | Proxy listen address. |
+| `ANONPROXY_PROFILE_DIR` | `~/.anonproxy/profiles` | Where engagement profiles (one JSON each) live. |
+| `ANONPROXY_EXPORTS_DIR` | `~/.anonproxy/exports` | Close-out evidence output root. |
+| `PORT` / `HOST` | `8099` / `127.0.0.1` | Proxy listen address. |
 | `ANTHROPIC_UPSTREAM` | `https://api.anthropic.com` | Anthropic upstream. |
 | `OPENAI_UPSTREAM` | `https://api.openai.com` | Any OpenAI-compatible endpoint — OpenRouter, Groq, Together, etc. Paste the provider's documented `base_url` as-is, with or without a trailing `/v1`; both work (`https://openrouter.ai/api/v1` and `https://openrouter.ai/api` are equivalent here). |
 | `ANONPROXY_API_TOKEN` | *(empty)* | Require `X-Anonproxy-Token` on the engine API. **Empty means the engine API and `/audit` are unauthenticated** — fine on an isolated laptop bound to `127.0.0.1`, but set this if the proxy is ever reachable by anything else (a shared box, a tunneled VPS). |
@@ -380,7 +418,7 @@ entirely until this check existed. Exit code is non-zero if anything real leaks.
 Check what's actually active any time:
 
 ```bash
-curl -s http://127.0.0.1:8080/anonproxy/health | python -m json.tool
+curl -s http://127.0.0.1:8099/anonproxy/health | python -m json.tool
 # -> detectors[]: name, available, model/effective_model, detail
 ```
 
@@ -394,7 +432,7 @@ rather than staying green while quietly returning zero detections.
 ## Tests
 
 ```bash
-python3 -m pytest -q                    # 114 tests: round-trip, streaming, proxy, audit, verify, detectors, tool-calls, vault, llm_detector, webapp, scope, config, polish
+python3 -m pytest -q                    # 120 tests: round-trip, streaming, proxy, audit, verify, detectors, tool-calls, vault, profiles, llm_detector, webapp, scope, config, polish
 python3 scripts/benchmark_roundtrip.py  # naive vs tolerant pass-rate table
 ```
 

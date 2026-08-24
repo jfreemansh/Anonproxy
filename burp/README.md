@@ -36,7 +36,7 @@ at runtime.)
 
    | Variable | Default | Meaning |
    |---|---|---|
-   | `ANONPROXY_ENGINE` | `http://127.0.0.1:8080` | engine API base URL |
+   | `ANONPROXY_ENGINE` | `http://127.0.0.1:8099` | engine API base URL |
    | `ENGAGEMENT_ID` | `default` | vault to use (must match the proxy) |
    | `ANONPROXY_API_TOKEN` | *(empty)* | sent as `X-Anonproxy-Token` if set |
 

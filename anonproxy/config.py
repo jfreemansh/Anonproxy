@@ -117,7 +117,7 @@ class Settings:
     restore_tolerant: bool = field(default_factory=lambda: _env_bool("ANONPROXY_TOLERANT", True))
 
     # --- Proxy ---------------------------------------------------------------
-    port: int = field(default_factory=lambda: _env_int("PORT", 8080))
+    port: int = field(default_factory=lambda: _env_int("PORT", 8099))
     host: str = field(default_factory=lambda: os.environ.get("HOST", "127.0.0.1"))
     anthropic_upstream: str = field(
         default_factory=lambda: os.environ.get("ANTHROPIC_UPSTREAM", "https://api.anthropic.com")

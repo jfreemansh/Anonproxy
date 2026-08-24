@@ -13,7 +13,7 @@ RUN pip install --no-cache-dir .
 ENV ANONPROXY_VAULT_DIR=/data/vaults
 VOLUME ["/data/vaults"]
 
-EXPOSE 8080
+EXPOSE 8099
 # bind to all interfaces *inside* the container; compose maps it to 127.0.0.1 only
 ENV HOST=0.0.0.0
 CMD ["python", "-m", "anonproxy", "serve"]

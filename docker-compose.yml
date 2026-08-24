@@ -3,7 +3,7 @@
 #
 #   ENGAGEMENT_ID=acme-2026 docker compose up -d
 #   docker compose exec ollama ollama pull qwen3:4b   # one-time model pull
-#   export ANTHROPIC_BASE_URL=http://127.0.0.1:8080
+#   export ANTHROPIC_BASE_URL=http://127.0.0.1:8099
 #
 services:
   ollama:
@@ -26,7 +26,7 @@ services:
       LLM_ENABLED: "${LLM_ENABLED:-true}"
       ANONPROXY_API_TOKEN: "${ANONPROXY_API_TOKEN:-}"
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8099:8099"
     volumes:
       - vaults:/data/vaults
 

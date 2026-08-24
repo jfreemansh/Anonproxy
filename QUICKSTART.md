@@ -69,12 +69,12 @@ separate.
 
 ```bash
 # Claude Code
-export ANTHROPIC_BASE_URL=http://127.0.0.1:8080
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8099
 claude
 ```
 
 For other tools, set their "base URL" / "API endpoint" to
-`http://127.0.0.1:8080` (Claude) or `http://127.0.0.1:8080/v1` (OpenAI-style).
+`http://127.0.0.1:8099` (Claude) or `http://127.0.0.1:8099/v1` (OpenAI-style).
 
 **3. Work normally.** Run your tools, paste output, ask questions. Everything is
 anonymized and restored automatically.
@@ -84,7 +84,7 @@ anonymized and restored automatically.
 Open this in your browser while the proxy runs:
 
 ```
-http://127.0.0.1:8080/audit
+http://127.0.0.1:8099/audit
 ```
 
 You'll see a live table of every real value and the fake it was swapped for, with

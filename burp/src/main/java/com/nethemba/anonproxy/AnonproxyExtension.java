@@ -39,7 +39,7 @@ public class AnonproxyExtension implements BurpExtension, HttpHandler {
 
     // Where the Python engine API listens (python -m anonproxy serve).
     private static final String ENGINE = System.getenv().getOrDefault(
-            "ANONPROXY_ENGINE", "http://127.0.0.1:8080");
+            "ANONPROXY_ENGINE", "http://127.0.0.1:8099");
     private static final String ENGAGEMENT = System.getenv().getOrDefault(
             "ENGAGEMENT_ID", "default");
     private static final String TOKEN = System.getenv().getOrDefault(

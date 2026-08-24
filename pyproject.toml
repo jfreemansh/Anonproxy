@@ -17,6 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
+menu = ["rumps>=0.4"]                             # macOS menubar app
 # Optional contextual-detection backends (enable via ANONPROXY_DETECTORS).
 gliner = ["gliner>=0.2.13"]
 gliner2 = ["gliner2>=0.1"]                       # SOTA: fastino/gliner2-privacy-filter-PII-multi

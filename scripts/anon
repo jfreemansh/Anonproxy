@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Anonproxy quick launcher — per-test profiles, one command each.
+#
+#   anon                     start the most recent profile (foreground)
+#   anon up acme-web         start a specific profile
+#   anon up acme-web --daemon / anon stop
+#   anon env acme-web        client export lines (--copy for clipboard)
+#   anon close acme-web      export evidence files + wipe the vault
+#   anon profile new acme-web --scope "acme.com,DC01" [--ephemeral] [...]
+#   anon profile list|show|edit|rm
+#
+# Everything else (serve, verify, anon, deanon, ...) passes through to
+# `python3 -m anonproxy`.
+set -euo pipefail
+[ $# -eq 0 ] && set -- up
+exec python3 -m anonproxy "$@"

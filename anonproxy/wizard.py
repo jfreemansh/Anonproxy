@@ -185,7 +185,7 @@ def run() -> int:
         if d and d not in detectors:
             detectors.append(d)
 
-    port = _ask("Proxy port", "8080")
+    port = _ask("Proxy port", "8099")
     use_token = _yesno("Protect the local API/audit with a token?", False)
     token = secrets.token_urlsafe(18) if use_token else ""
 
