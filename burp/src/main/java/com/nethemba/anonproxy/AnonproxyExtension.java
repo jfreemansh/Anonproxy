@@ -70,7 +70,12 @@ public class AnonproxyExtension implements BurpExtension, HttpHandler, ContextMe
     private MontoyaApi api;
     private Logging log;
     private final HttpClient http = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(5)).build();
+            .connectTimeout(Duration.ofSeconds(5))
+            // Burp sets JVM-wide proxy properties; without this the
+            // extension's engine calls get routed through Burp's own
+            // listener and die there. The engine is localhost — never proxy.
+            .proxy(HttpClient.Builder.NO_PROXY)
+            .build();
 
     // messageId() is identical between a request and its response (confirmed in
     // the Montoya javadoc). Tracking it here is more reliable than re-checking
