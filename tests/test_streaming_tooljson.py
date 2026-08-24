@@ -124,3 +124,33 @@ def test_push_path_emission_escapes_hostile_original():
     assert '"secret":"' in partial          # surrogate already restored via push()
     parsed = json.loads(partial)            # MUST be valid JSON
     assert parsed["secret"] == 'P@ss"word'
+
+
+def test_complete_json_flushes_without_closing_events():
+    """Field-observed failure: upstream delivers the complete arguments JSON
+    then ends the stream WITHOUT content_block_stop. The tail must be flushed
+    the moment the accumulated fragment parses — not on teardown races."""
+    engine = _engine_with_host()
+    surr = engine.vault.surrogate_for("dc01.acmecorp.local")
+    inner = json.dumps({"command": f"cat {surr}", "timeout": 5000},
+                       separators=(",", ":"))
+    deltas = [inner[i:i+10] for i in range(0, len(inner), 10)]
+    events = [
+        'data: {"type":"content_block_start","index":0,"content_block":'
+        '{"type":"tool_use","name":"Bash","id":"t1"}}\n\n',
+    ] + [
+        'data: ' + json.dumps({"type": "content_block_delta", "index": 0,
+                               "delta": {"type": "input_json_delta",
+                                         "partial_json": d}}) + '\n\n'
+        for d in deltas
+    ]  # NOTE: no content_block_stop, no message_stop — stream just ends
+
+    collected = asyncio_run_collect(engine, events)
+    partial = ""
+    for line in collected.splitlines():
+        if line.startswith("data:") and "partial_json" in line:
+            obj = json.loads(line[5:])
+            if obj.get("type") == "content_block_delta":
+                partial += obj["delta"].get("partial_json", "")
+    parsed = json.loads(partial)     # MUST be complete and valid
+    assert parsed["command"] == f"cat dc01.acmecorp.local"

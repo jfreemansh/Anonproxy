@@ -56,6 +56,26 @@ _DELTA_FIELD = {"text_delta": "text", "input_json_delta": "partial_json"}
 
 async def anthropic_stream(engine, aiter_bytes) -> AsyncIterator[str]:
     restorers: dict[int, tuple[object, str]] = {}  # idx -> (StreamRestorer, delta type)
+    raw_acc: dict[int, str] = {}   # idx -> accumulated raw fragment (tool args)
+    done: set[int] = set()         # idx whose JSON completed and was flushed
+
+    def _emit_tail(idx: int) -> str:
+        """Flush a finished block's hold-back and return the SSE event, or ''."""
+        entry = restorers.pop(idx, None)
+        if entry is None:
+            return ""
+        sr, dtype = entry
+        tail = sr.flush()
+        raw_acc.pop(idx, None)
+        done.add(idx)
+        if tail:
+            field = _DELTA_FIELD[dtype]
+            return _data_event("content_block_delta", {
+                "type": "content_block_delta", "index": idx,
+                "delta": {"type": dtype, field: tail},
+            })
+        return ""
+
     try:
         async for line in _lines(aiter_bytes):
             if not line.startswith("data:"):
@@ -74,6 +94,8 @@ async def anthropic_stream(engine, aiter_bytes) -> AsyncIterator[str]:
             field = _DELTA_FIELD.get(dtype)
             if etype == "content_block_delta" and field:
                 idx = obj.get("index", 0)
+                if idx in done:
+                    continue        # block already fully delivered
                 entry = restorers.get(idx)
                 if entry is None:
                     entry = restorers[idx] = (
@@ -81,41 +103,46 @@ async def anthropic_stream(engine, aiter_bytes) -> AsyncIterator[str]:
                         dtype,
                     )
                 sr, _ = entry
-                obj["delta"][field] = sr.push(obj["delta"].get(field, ""))
+                fragment = obj["delta"].get(field, "")
+                obj["delta"][field] = sr.push(fragment)
                 yield f"data: {json.dumps(obj)}\n\n"
+                if dtype == "input_json_delta":
+                    # The moment the accumulated arguments form complete JSON,
+                    # flush — never wait for content_block_stop or teardown.
+                    # Upstream has been observed ending streams without
+                    # closing events; the tail must not ride on them.
+                    acc = raw_acc.get(idx, "") + fragment
+                    raw_acc[idx] = acc
+                    try:
+                        json.loads(acc)
+                    except json.JSONDecodeError:
+                        pass
+                    else:
+                        tail_event = _emit_tail(idx)
+                        if tail_event:
+                            yield tail_event
             elif etype == "content_block_stop":
                 idx = obj.get("index", 0)
-                entry = restorers.pop(idx, None)
-                if entry is not None:
-                    sr, dtype = entry
-                    tail = sr.flush()
-                    if tail:
-                        field = _DELTA_FIELD[dtype]
-                        yield _data_event("content_block_delta", {
-                            "type": "content_block_delta", "index": idx,
-                            "delta": {"type": dtype, field: tail},
-                        })
+                tail_event = _emit_tail(idx)
+                if tail_event:
+                    yield tail_event
                 yield f"data: {json.dumps(obj)}\n\n"
             else:
                 yield f"data: {json.dumps(obj)}\n\n"
     finally:
-        # Upstream ended without content_block_stop events (429/overload,
-        # cut connection, error event): flush every outstanding hold-back
-        # buffer so the client still receives the restored tail.
-        for idx, (sr, dtype) in list(restorers.items()):
-            tail = sr.flush()
-            if tail:
-                field = _DELTA_FIELD[dtype]
-                yield _data_event("content_block_delta", {
-                    "type": "content_block_delta", "index": idx,
-                    "delta": {"type": dtype, field: tail},
-                })
-            restorers.pop(idx, None)
+        # Stream ended without closing events (429/overload, cut connection):
+        # flush whatever is still held so the client receives the tail.
+        for idx in list(restorers):
+            tail_event = _emit_tail(idx)
+            if tail_event:
+                yield tail_event
 
 
 async def openai_stream(engine, aiter_bytes) -> AsyncIterator[str]:
     restorers: dict[int, object] = {}                     # choice index -> content restorer
     tool_restorers: dict[tuple[int, int], object] = {}    # (choice index, call index) -> restorer
+    raw_args: dict[tuple[int, int], str] = {}             # accumulated raw arguments
+    done_tools: set[tuple[int, int]] = set()
 
     def _flush_all() -> AsyncIterator[str]:
         async def _gen():
@@ -133,6 +160,7 @@ async def openai_stream(engine, aiter_bytes) -> AsyncIterator[str]:
                     yield f"data: {json.dumps(chunk)}\n\n"
             restorers.clear()
             tool_restorers.clear()
+            raw_args.clear()
         return _gen()
 
     try:
@@ -169,10 +197,29 @@ async def openai_stream(engine, aiter_bytes) -> AsyncIterator[str]:
                     if isinstance(args, str) and args:
                         tidx = tc.get("index", 0)
                         key = (cidx, tidx)
+                        if key in done_tools:
+                            continue
                         sr = tool_restorers.get(key)
                         if sr is None:
                             sr = tool_restorers[key] = engine.stream_restorer(json_args=True)
                         fn["arguments"] = sr.push(args)
+                        acc = raw_args.get(key, "") + args
+                        raw_args[key] = acc
+                        try:
+                            json.loads(acc)
+                        except json.JSONDecodeError:
+                            pass
+                        else:
+                            tail = sr.flush()
+                            done_tools.add(key)
+                            raw_args.pop(key, None)
+                            if tail:
+                                chunk = {"choices": [{
+                                    "index": cidx,
+                                    "delta": {"tool_calls": [
+                                        {"index": tidx,
+                                         "function": {"arguments": tail}}]}}]}
+                                yield f"data: {json.dumps(chunk)}\n\n"
             yield f"data: {json.dumps(obj)}\n\n"
     finally:
         # Upstream ended without [DONE]: same contract as anthropic_stream.
