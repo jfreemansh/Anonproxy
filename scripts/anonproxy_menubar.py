@@ -176,27 +176,31 @@ class AnonproxyBar(rumps.App):
                       else ICON_EXT if self._external_port() else ICON_OFF)
     # ------------------------------------------------------------------ menu
     def _rebuild(self) -> None:
+        # NOTE: pass BOUND METHODS, not callback-name strings — rumps only
+        # resolves string names for items added directly to the root menu,
+        # so submenu items ('Engagements ▸ …') would raise
+        # TypeError: 'str' object is not callable at click time.
         state = (f"● running: {self.running_profile}" if self._is_running()
                  else f"○ stopped — selected: {self.selected}")
         items: list = [rumps.MenuItem(state, callback=None), None,
                        rumps.MenuItem(f"{'Stop' if self._is_running() else 'Start'}"
                                       f"  ({self.selected})",
-                                      callback="start_stop"),
+                                      callback=self.start_stop),
                        rumps.MenuItem("Engagements")]
         engs = items[-1]
         for pr in self.store.list():
-            item = rumps.MenuItem(pr.name, callback="select_profile")
+            item = rumps.MenuItem(pr.name, callback=self.select_profile)
             item.state = pr.name == self.selected
             engs.add(item)
         engs.add(None)
-        engs.add(rumps.MenuItem("＋ New engagement…", callback="new_engagement"))
-        engs.add(rumps.MenuItem("Edit profiles folder…", callback="edit_profiles"))
+        engs.add(rumps.MenuItem("＋ New engagement…", callback=self.new_engagement))
+        engs.add(rumps.MenuItem("Edit profiles folder…", callback=self.edit_profiles))
         items += [None,
-                  rumps.MenuItem("Copy client env", callback="copy_env"),
-                  rumps.MenuItem("Open audit dashboard", callback="open_audit"),
-                  rumps.MenuItem("Verify coverage", callback="verify_coverage"),
+                  rumps.MenuItem("Copy client env", callback=self.copy_env),
+                  rumps.MenuItem("Open audit dashboard", callback=self.open_audit),
+                  rumps.MenuItem("Verify coverage", callback=self.verify_coverage),
                   rumps.MenuItem("Export & archive vault…",
-                                 callback="export_archive")]
+                                 callback=self.export_archive)]
         self.menu.clear()
         for entry in items:
             self.menu.add(entry)
