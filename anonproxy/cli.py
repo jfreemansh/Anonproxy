@@ -73,6 +73,15 @@ def main(argv=None) -> int:
     sub.add_parser("deanon", help="deanonymize stdin")
     sub.add_parser("stats", help="show vault stats")
     sub.add_parser("export", help="dump mappings")
+    vprune = sub.add_parser("vault-prune",
+                            help="delete mappings from the engagement vault "
+                                 "(detection artifacts, stale entries)")
+    vprune.add_argument("--type", default=None, dest="etype",
+                        help="only mappings of this entity type (e.g. USERNAME)")
+    vprune.add_argument("--contains", default=None,
+                        help="only mappings whose original contains this substring")
+    vprune.add_argument("--yes", action="store_true",
+                        help="apply (default: dry run, prints what would go)")
 
     # --- profiles: per-test context, one JSON each ---------------------------
     prof = sub.add_parser("profile", help="manage engagement profiles")
@@ -291,6 +300,24 @@ def main(argv=None) -> int:
         print(json.dumps(engine.stats(), indent=2))
     elif args.cmd == "export":
         print(json.dumps(engine.export(), indent=2))
+    elif args.cmd == "vault-prune":
+        rows = engine.export()
+        picked = [r["original"] for r in rows
+                  if (args.etype is None or r["entity_type"] == args.etype)
+                  and (args.contains is None or args.contains in r["original"])]
+        if not picked:
+            print("nothing matches the given filters")
+            return 0
+        by_orig = {r["original"]: r for r in rows}
+        for original in picked:
+            r = by_orig[original]
+            print(f"  {r['entity_type']:12} {original[:72]!r}")
+        if not args.yes:
+            print(f"\n{len(picked)} mapping(s) matched — re-run with --yes to delete")
+            return 0
+        gone = engine.vault.delete_originals(picked)
+        print(f"deleted {len(gone)} mapping(s) from "
+              f"engagement {settings.engagement_id!r}")
     return 0
 
 

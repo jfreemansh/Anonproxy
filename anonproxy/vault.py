@@ -236,6 +236,27 @@ class Vault:
         rows.sort(key=lambda r: len(r[0]), reverse=True)
         return rows
 
+    def delete_originals(self, originals: list[str]) -> list[str]:
+        """Remove mappings by exact original text (vault hygiene: prune
+        detection artifacts without wiping the engagement). Returns the
+        originals that existed and were deleted."""
+        gone: list[str] = []
+        with self._lock:
+            for original in originals:
+                surrogate = self._fwd.get(original)
+                if surrogate is None:
+                    continue
+                self._conn.execute(
+                    "DELETE FROM mappings WHERE original = ?", (original,))
+                self._fwd.pop(original, None)
+                self._rev.pop(surrogate, None)
+                gone.append(original)
+            if gone:
+                self._conn.commit()
+                if self._enc_key:
+                    self._seal()
+        return gone
+
     def surrogate_for(self, original: str) -> Optional[str]:
         return self._fwd.get(original)
 
