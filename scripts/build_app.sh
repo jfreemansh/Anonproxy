@@ -26,7 +26,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleIdentifier</key><string>local.anonproxy.anonbar</string>
     <key>CFBundleExecutable</key><string>anonbar</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.1.0</string>
+    <key>CFBundleShortVersionString</key><string>0.1.1</string>
     <!-- status-bar only: no Dock icon -->
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>

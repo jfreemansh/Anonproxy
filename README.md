@@ -140,7 +140,16 @@ Building from source instead? See
 **B. Guided wizard**
 
 ```bash
-pip install -r requirements.txt
+# one-time install (Python 3.10+): gives you the `anonproxy` command
+pipx install anonproxy        # or: pip install anonproxy  /  pip install .
+anonproxy wizard
+```
+
+From source instead?
+
+```bash
+git clone https://github.com/jfreemansh/Anonproxy && cd Anonproxy
+pip install .                 # or: pip install -r requirements.txt + python -m anonproxy
 python -m anonproxy wizard
 ```
 
