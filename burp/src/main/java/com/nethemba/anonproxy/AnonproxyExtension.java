@@ -327,7 +327,10 @@ public class AnonproxyExtension implements BurpExtension, HttpHandler, ContextMe
             return List.of();
         }
         JMenuItem item = new JMenuItem("Anonproxy: Copy anonymized to clipboard");
-        item.addActionListener(e -> copyAnonymized(event));
+        // Engine calls are synchronous HTTP — run them OFF the EDT or the
+        // whole Burp UI freezes for the duration of the round trip.
+        item.addActionListener(e ->
+                new Thread(() -> copyAnonymized(event), "anonproxy-copy").start());
         return List.of(item);
     }
 
