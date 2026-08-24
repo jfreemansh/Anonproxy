@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: macos-14
+    permissions:
+      contents: write    # create the GitHub release and attach assets
     steps:
       - uses: actions/checkout@v4
 
