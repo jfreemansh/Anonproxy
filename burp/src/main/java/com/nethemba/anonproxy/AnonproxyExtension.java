@@ -75,6 +75,10 @@ public class AnonproxyExtension implements BurpExtension, HttpHandler, ContextMe
             // extension's engine calls get routed through Burp's own
             // listener and die there. The engine is localhost — never proxy.
             .proxy(HttpClient.Builder.NO_PROXY)
+            // Java defaults to HTTP/2, which sends `Upgrade: h2c` on
+            // cleartext POSTs; uvicorn rejects the upgrade and drops the
+            // body (500 on an empty JSON payload). Speak HTTP/1.1 only.
+            .version(HttpClient.Version.HTTP_1_1)
             .build();
 
     // messageId() is identical between a request and its response (confirmed in
